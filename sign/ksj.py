@@ -8,7 +8,7 @@ class KsjSign(BaseSign):
         super(KsjSign, self).__init__("https://www.4ksj.com", username, password)
 
     def login(self) -> bool:
-        print(f"进行 {self.username} 登录")
+        self.logger.info(f"进行 {self.username} 登录")
         response = self.session.get(f"{self.base_url}/member.php?mod=logging&action=login")
         selector = Selector(response=response)
         form_hash = selector.xpath('//*[@id="scbar_form"]/input[2]/@value').extract_first()
@@ -40,9 +40,9 @@ class KsjSign(BaseSign):
         jump_src = result_selector.re(r'src="(.*?)"')
         if len(jump_src) == 0:
             result = result_selector.re(r'errorhandle_\((.*?),')
-            print(result[0])
+            self.logger.info(result[0])
             return False
         else:
             self.session.get(jump_src[0])
-        print(f'登录成功')
+        self.logger.info(f'登录成功')
         return True

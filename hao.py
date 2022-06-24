@@ -1,9 +1,125 @@
 import json
+import logging
+import os
+import sys
+import time
+import traceback
+from io import BytesIO
 
+import ddddocr
+import requests
+from PIL import Image
 from scrapy import Selector
 
-from code.gifcode import handle_yzm
-from sign.base import BaseSign
+logger = logging.getLogger(name=None)  # 创建一个日志对象
+logging.Formatter("%(message)s")  # 日志内容格式化
+logger.setLevel(logging.INFO)  # 设置日志等级
+logger.addHandler(logging.StreamHandler())  # 添加控制台日志
+
+
+class BaseSign:
+    session: requests.Session
+    base_url: str
+    username: str
+    password: str
+
+    def __init__(self, base_url, username, password):
+        self.base_url = base_url
+        self.username = username
+        self.password = password
+        self.session = requests.session()
+        logger.info(f"自助脚本初始化完成：{base_url}")
+
+    def login(self) -> bool:
+        logger.info("需要实现")
+        return False
+
+    def sign(self) -> bool:
+        qd_response = self.session.get(f"{self.base_url}/qiandao/")
+        sign_selector = Selector(response=qd_response)
+        sign_info = sign_selector.xpath('//*[@id="wp"]/div[2]/div[1]/div[1]/div/div[1]/text()').extract_first()
+        if sign_info is None:
+            sign_info = sign_selector.xpath('//*[@id="wp"]/div[3]/div[1]/div[1]/div/div[1]/text()').extract_first()
+        logger.info(sign_info.strip())
+        if sign_info and sign_info.strip() == "您今天还没有签到":
+            logger.info("进行签到中...")
+            form_hash = sign_selector.xpath('//*[@id="scbar_form"]/input[2]/@value').extract_first()
+            if form_hash == "":
+                logger.info("获取签到表单验证失败")
+                return False
+            response = self.session.get(
+                f"{self.base_url}/qiandao/?mod=sign&operation=qiandao&formhash={form_hash}&format=empty")
+            result_selector = Selector(response=response)
+            result = result_selector.xpath("/root/text()").extract_first()
+            if result:
+                logger.info(f'签到失败：{result}')
+                return False
+            else:
+                logger.info('签到成功')
+                return True
+        # TODO:获取签到积分信息
+        return True
+
+
+def recogition2(yzm_data):
+    '''
+    验证码识别
+    :param yzm_data:
+    :return:
+    '''
+    ocr = ddddocr.DdddOcr(show_ad=False)
+    res = ocr.classification(yzm_data)
+    return res
+
+
+def gif_to_png(length, image) -> (int, bytes):
+    '''
+    gif抽帧
+    :param length:
+    :param image:
+    :return:
+    '''
+    max_frame = length
+    try:
+        max_dura = 0
+        max_img = b''
+        for i in range(1, length):
+            try:
+                image.seek(i)
+            except Exception as e:
+                logger.info("该图片最多:", i)
+                max_frame = i
+                break
+            dura = image.info.get("duration", 0)
+            if dura > max_dura:
+                logger.info("找到新延迟：", dura)
+                max_dura = dura
+                stream = BytesIO()
+                image.save(stream, 'PNG')
+                max_img = stream.getvalue()
+        return max_frame, max_img
+    except Exception as e:
+        logger.info(e)
+    return max_frame, None
+
+
+def handle_yzm(length, gif) -> str:
+    '''
+    处理验证码
+    :return:
+    '''
+    logger.info("验证码识别中...")
+    result = ""
+    start = time.time()
+    if gif:
+        data = BytesIO(gif)
+        image = Image.open(data)
+        _, png_info = gif_to_png(length, image)
+        if png_info:
+            result = recogition2(png_info)
+    end = time.time()
+    logger.info(f"验证码结果：{result}-花费时间：{end - start}")
+    return result
 
 
 class HaoSign(BaseSign):
@@ -134,7 +250,7 @@ class HaoSign(BaseSign):
         super(HaoSign, self).__init__("https://www.hao4k.cn", username, password)
 
     def login(self) -> bool:
-        self.logger.info(f"进行 {self.username} 登录")
+        logger.info(f"进行 {self.username} 登录")
         response = self.session.get(f"{self.base_url}/member.php?mod=logging&action=login")
         selector = Selector(response=response)
         form_data = selector.re(r"formhash:'(\w*)'")
@@ -178,16 +294,17 @@ class HaoSign(BaseSign):
             try:
                 result = json.loads(response.text)
                 if result.get("code") == "1":
-                    self.logger.info("登录失败：", self.err_msg_dict.get(result.get("msg", ""), result.get("msg", "")))
+                    logger.info("登录失败：", self.err_msg_dict.get(result.get("msg", ""), result.get("msg", "")))
                     return False
                 elif result.get("code") == "0":
-                    self.logger.info("登录成功")
+                    logger.info("登录成功")
+                    self.session.get(self.base_url)
                     return True
                 else:
-                    self.logger.info(result)
+                    logger.info(result)
                     return False
             except Exception as e:
-                self.logger.info("请求异常:\n", response.text)
+                logger.info("请求异常:\n", response.text)
                 return False
 
     def code(self, sec_hash, update) -> str:
@@ -210,3 +327,29 @@ class HaoSign(BaseSign):
         }
         response = self.session.get(url, headers=headers, data=payload)
         return handle_yzm(50, response.content)
+
+
+def load_send() -> None:
+    logger.info("加载推送功能中...")
+    global send
+    send = None
+    cur_path = os.path.abspath(os.path.dirname(__file__))
+    sys.path.append(cur_path)
+    if os.path.exists(cur_path + "/notify.py"):
+        try:
+            from notify import send
+        except Exception:
+            send = None
+            logger.info(f"❌加载通知服务失败!!!\n{traceback.format_exc()}")
+
+
+if __name__ == "__main__":
+    load_send()
+    username = os.getenv('SIGN_USERNAME')
+    password = os.getenv('SIGN_PASSWORD')
+    if username and password:
+        hao = HaoSign(username, password)
+        if hao.login():
+            send(f"签到结果：{hao.sign()}")
+    else:
+        logger.info("请设置账号")
