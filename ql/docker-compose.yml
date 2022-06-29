@@ -1,0 +1,8 @@
+version: '2'
+services:
+  web:
+    image: qinglong:v9
+    volumes:
+      - ./data:/ql/data
+    ports:
+      - "0.0.0.0:5700:5700"
