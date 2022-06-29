@@ -1,3 +1,8 @@
+# -*- coding:utf-8 -*-
+"""
+cron: 0 8 * * *
+new Env('hao4k签到');
+"""
 import json
 import os
 

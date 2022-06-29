@@ -1,3 +1,8 @@
+# -*- coding:utf-8 -*-
+"""
+cron: 0 8 * * *
+new Env('4ksj签到');
+"""
 import os
 from urllib.parse import quote
 
