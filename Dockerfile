@@ -199,5 +199,5 @@ RUN set -x \
     && mkdir -p ${QL_DIR}/static \
     && cp -rf /static/* ${QL_DIR}/static \
     && rm -rf /static
-COPY start.sh .
-ENTRYPOINT ["./start.sh"]
+COPY qlcheck.sh .
+ENTRYPOINT ["./qlcheck.sh"]

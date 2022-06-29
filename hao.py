@@ -223,8 +223,8 @@ class HaoSign(BaseSign):
 
 
 if __name__ == "__main__":
-    username = os.getenv('SIGN_USERNAME')
-    password = os.getenv('SIGN_PASSWORD')
+    username = os.getenv('SIGN_USERNAME_4K')
+    password = os.getenv('SIGN_PASSWORD_4K')
     if username and password:
         hao = HaoSign(username, password)
         sign = False
