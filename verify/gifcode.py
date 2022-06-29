@@ -55,19 +55,19 @@ def gif_to_png(length, image) -> (int, bytes):
             try:
                 image.seek(i)
             except Exception as e:
-                logger.info("该图片最多:", i)
+                print(f"该图片最多:{i}")
                 max_frame = i
                 break
             dura = image.info.get("duration", 0)
             if dura > max_dura:
-                logger.info("找到新延迟：", dura)
+                print(f"找到新延迟：{dura}")
                 max_dura = dura
                 stream = BytesIO()
                 image.save(stream, 'PNG')
                 max_img = stream.getvalue()
         return max_frame, max_img
     except Exception as e:
-        logger.info(e)
+        print(e)
     return max_frame, None
 
 
@@ -76,7 +76,7 @@ def handle_yzm(length, gif) -> str:
     处理验证码
     :return:
     '''
-    logger.info("验证码识别中...")
+    print("验证码识别中...")
     result = ""
     start = time.time()
     if gif:
@@ -86,7 +86,7 @@ def handle_yzm(length, gif) -> str:
         if png_info:
             result = recogition2(png_info)
     end = time.time()
-    logger.info(f"验证码结果：{result}-花费时间：{end - start}")
+    print(f"验证码结果：{result}-花费时间：{end - start}")
     return result
 
 

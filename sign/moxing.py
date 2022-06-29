@@ -5,9 +5,9 @@ from scrapy import Selector
 from sign.base import BaseSign
 
 
-class KsjSign(BaseSign):
+class MoxingSign(BaseSign):
     def __init__(self, username, password):
-        super(KsjSign, self).__init__("https://www.4ksj.com", username, password)
+        super(MoxingSign, self).__init__("https://moxing.finance", username, password)
 
     def login(self) -> bool:
         print(f"进行 {self.username} 登录")
@@ -39,12 +39,40 @@ class KsjSign(BaseSign):
         }
         response = self.session.post(url, headers=headers, data=payload)
         result_selector = Selector(response=response)
-        jump_src = result_selector.re(r'src="(.*?)"')
+        jump_src = result_selector.re(r"succeedhandle_\('(.*?)'")
         if len(jump_src) == 0:
             result = result_selector.re(r'errorhandle_\((.*?),')
+            if len(result) == 0:
+                print(f'登录失败:{response.text}')
+                return False
             print(result[0])
             return False
         else:
-            self.session.get(jump_src[0])
+            self.sign_url = jump_src[0]
         print(f'登录成功')
+        return True
+
+    def sign(self) -> bool:
+        qd_response = self.session.get(self.sign_url)
+        sign_selector = Selector(response=qd_response)
+        sign_info = sign_selector.xpath('//*[@id="fx_checkin_b"]/@alt').extract_first()
+        print(f"当前状态：{sign_info}")
+        if sign_info and sign_info == "点击签到":
+            print("进行签到中...")
+            form_hash = sign_selector.xpath('//*[@id="scbar_form"]/input[2]/@value').extract_first()
+            if form_hash == "":
+                print("获取签到表单验证失败")
+                return False
+            sign_response = self.session.get(
+                f"{self.base_url}/plugin.php?id=k_misign:sign&operation=qiandao&format=global_usernav_extra&formhash={form_hash}&inajax=1&ajaxtarget=k_misign_topb")
+            result_selector = Selector(response=sign_response)
+            # sign_info = sign_selector.re(r'alt="(.*?)"')
+            result = result_selector.xpath("/root/text()").extract_first()
+            if result:
+                print(f'签到失败：{result}')
+                return False
+            else:
+                print('签到成功')
+                return True
+        # TODO:获取签到积分信息
         return True

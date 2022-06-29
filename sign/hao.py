@@ -2,7 +2,7 @@ import json
 
 from scrapy import Selector
 
-from code.gifcode import handle_yzm
+from verify.gifcode import handle_yzm
 from sign.base import BaseSign
 
 
@@ -133,8 +133,11 @@ class HaoSign(BaseSign):
     def __init__(self, username, password):
         super(HaoSign, self).__init__("https://www.hao4k.cn", username, password)
 
-    def login(self) -> bool:
-        self.logger.info(f"进行 {self.username} 登录")
+    def login(self, times=3) -> bool:
+        if times == 0:
+            print("失败次数过多")
+            return False
+        print(f"进行 {self.username} 登录-times:{times}")
         response = self.session.get(f"{self.base_url}/member.php?mod=logging&action=login")
         selector = Selector(response=response)
         form_data = selector.re(r"formhash:'(\w*)'")
@@ -158,7 +161,7 @@ class HaoSign(BaseSign):
             url = f"{self.base_url}/plugin.php?id=jzsjiale_isms:api"
             payload = f'module=loginmima&version=1&loginsubmit=yes&discode={discode}&type=auto&account={self.username}&password={self.password}&questionid=0&answer=&seccodehash={sec_hash}&seccodeverify={verify_code}&formhash={form_hash}&logintype=mima&device=mobile&cookietime=2592000&referer=https%3A%2F%2Fwww.hao4k.cn%2F.%2F'
             headers = {
-                'authority': self.base_url[8:],
+                'authority': self.url_info.hostname,
                 'accept': 'application/json, text/plain, */*',
                 'accept-language': 'zh-CN,zh;q=0.9',
                 'cache-control': 'no-cache',
@@ -178,23 +181,23 @@ class HaoSign(BaseSign):
             try:
                 result = json.loads(response.text)
                 if result.get("code") == "1":
-                    self.logger.info("登录失败：", self.err_msg_dict.get(result.get("msg", ""), result.get("msg", "")))
-                    return False
+                    print("登录失败：", self.err_msg_dict.get(result.get("msg", ""), result.get("msg", "")))
+                    return self.login(times - 1)
                 elif result.get("code") == "0":
-                    self.logger.info("登录成功")
+                    print("登录成功")
                     return True
                 else:
-                    self.logger.info(result)
-                    return False
+                    print(result)
+                    return self.login(times - 1)
             except Exception as e:
-                self.logger.info("请求异常:\n", response.text)
+                print("请求异常:\n", response.text)
                 return False
 
     def code(self, sec_hash, update) -> str:
         url = f"{self.base_url}/misc.php?mod=seccode&update={update}&idhash={sec_hash}"
         payload = {}
         headers = {
-            'authority': self.base_url[8:],
+            'authority': self.url_info.hostname,
             'accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
             'accept-language': 'zh-CN,zh;q=0.9',
             'cache-control': 'no-cache',
