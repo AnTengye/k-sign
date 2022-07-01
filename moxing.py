@@ -86,9 +86,11 @@ class MoxingSign(BaseSign):
 
 
 if __name__ == "__main__":
-    username = os.getenv('SIGN_USERNAME_MX')
-    password = os.getenv('SIGN_PASSWORD_MX')
-    if username and password:
+    UP = os.getenv('SIGN_UP_MOXING')
+    if UP:
+        user_info = UP.split("|")
+        username = user_info[0]
+        password = user_info[1]
         s = MoxingSign(username, password)
         sign = False
         if s.login():

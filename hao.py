@@ -223,13 +223,16 @@ class HaoSign(BaseSign):
 
 
 if __name__ == "__main__":
-    username = os.getenv('SIGN_USERNAME_4K')
-    password = os.getenv('SIGN_PASSWORD_4K')
-    if username and password:
-        hao = HaoSign(username, password)
-        sign = False
-        if hao.login():
-            sign = hao.sign()
-        send(title="hao签到", content=f"签到结果：{sign}")
+    UP = os.getenv('SIGN_UP_4K')
+    if UP:
+        user_info = UP.split("|")
+        username = user_info[0]
+        password = user_info[1]
+        if username and password:
+            hao = HaoSign(username, password)
+            sign = False
+            if hao.login():
+                sign = hao.sign()
+            send(title="hao签到", content=f"签到结果：{sign}")
     else:
         print("请设置账号")

@@ -301,9 +301,11 @@ class DJGameSign(BaseSign):
 
 
 if __name__ == "__main__":
-    username = os.getenv('SIGN_USERNAME_2D')
-    password = os.getenv('SIGN_PASSWORD_2D')
-    if username and password:
+    UP = os.getenv('SIGN_UP_2DJ')
+    if UP:
+        user_info = UP.split("|")
+        username = user_info[0]
+        password = user_info[1]
         s = DJGameSign(username, password)
         sign = False
         if s.login():

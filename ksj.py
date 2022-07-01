@@ -58,9 +58,11 @@ class KsjSign(BaseSign):
 
 
 if __name__ == "__main__":
-    username = os.getenv('SIGN_USERNAME_4K')
-    password = os.getenv('SIGN_PASSWORD_4K')
-    if username and password:
+    UP = os.getenv('SIGN_UP_4K')
+    if UP:
+        user_info = UP.split("|")
+        username = user_info[0]
+        password = user_info[1]
         ksj = KsjSign(username, password)
         if ksj.login():
             send(title="ksj签到", content=f"签到结果：{ksj.sign()}")

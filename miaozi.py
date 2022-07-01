@@ -244,9 +244,11 @@ class MiaoSign(BaseSign):
 
 
 if __name__ == "__main__":
-    username = os.getenv('SIGN_USERNAME_MZ')
-    password = os.getenv('SIGN_PASSWORD_MZ')
-    if username and password:
+    UP = os.getenv('SIGN_UP_MIAOZI')
+    if UP:
+        user_info = UP.split("|")
+        username = user_info[0]
+        password = user_info[1]
         s = MiaoSign(username, password)
         sign = False
         if s.login():
