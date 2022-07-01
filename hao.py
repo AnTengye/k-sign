@@ -1,6 +1,6 @@
 # -*- coding:utf-8 -*-
 """
-cron: 0 8 * * *
+cron: 0 0 8 * * *
 new Env('hao4k签到');
 """
 import json
@@ -219,7 +219,7 @@ class HaoSign(BaseSign):
             'user-agent': 'Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/102.0.0.0 Mobile Safari/537.36'
         }
         response = self.session.get(url, headers=headers, data=payload)
-        return handle_yzm(50, response.content)
+        return handle_yzm(response.content)
 
 
 if __name__ == "__main__":

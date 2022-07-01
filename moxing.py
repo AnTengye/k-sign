@@ -1,6 +1,6 @@
 # -*- coding:utf-8 -*-
 """
-cron: 0 8 * * *
+cron: 0 0 8 * * *
 new Env('moxing签到');
 """
 import os

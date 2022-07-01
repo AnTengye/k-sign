@@ -17,6 +17,7 @@ class BaseSign:
         self.username = username
         self.password = password
         self.session = requests.session()
+        self.session.verify = False
         print(f"自助脚本初始化完成：{base_url}")
 
     def login(self) -> bool:
