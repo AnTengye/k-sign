@@ -22,6 +22,7 @@ class BaseSign:
         self.password = password
         self.session = requests.session()
         self.session.verify = False
+        self.content = list()
         print(f"自助脚本初始化完成：{base_url}")
 
     def login(self) -> bool:
@@ -34,7 +35,7 @@ class BaseSign:
         sign_info = sign_selector.xpath('//*[@id="wp"]/div[2]/div[1]/div[1]/div/div[1]/text()').extract_first()
         if sign_info is None:
             sign_info = sign_selector.xpath('//*[@id="wp"]/div[3]/div[1]/div[1]/div/div[1]/text()').extract_first()
-        print(sign_info.strip())
+        self.pwl(sign_info.strip())
         if sign_info and sign_info.strip() == "您今天还没有签到":
             print("进行签到中...")
             form_hash = sign_selector.xpath('//*[@id="scbar_form"]/input[2]/@value').extract_first()
