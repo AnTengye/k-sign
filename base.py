@@ -2,6 +2,9 @@ from urllib.parse import urlparse, ParseResult
 
 import requests
 from scrapy import Selector
+import requests.packages.urllib3
+
+requests.packages.urllib3.disable_warnings()
 
 
 class BaseSign:
@@ -10,6 +13,7 @@ class BaseSign:
     url_info: ParseResult
     username: str
     password: str
+    content: list
 
     def __init__(self, base_url, username, password):
         self.url_info = urlparse(base_url)
@@ -41,6 +45,7 @@ class BaseSign:
                 f"{self.base_url}/qiandao/?mod=sign&operation=qiandao&formhash={form_hash}&format=empty")
             result_selector = Selector(response=response)
             result = result_selector.xpath("/root/text()").extract_first()
+            self.pwl(result)
             if result:
                 print(f'签到失败：{result}')
                 return False
@@ -49,3 +54,10 @@ class BaseSign:
                 return True
         # TODO:获取签到积分信息
         return True
+
+    def pwl(self, c: str):
+        print(c)
+        self.content.append(c)
+
+    def log(self) -> str:
+        return "\n".join(self.content)

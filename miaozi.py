@@ -237,7 +237,7 @@ class MiaoSign(BaseSign):
         response = self.session.get(url, headers=headers, data=payload)
         selector = Selector(response=response)
         result = selector.xpath('//*[@id="messagetext"]/p[1]/text()').extract_first("")
-        print(f"结果：{result}")
+        self.pwl(f"结果：{result}")
         if "成功" in result:
             return True
         return False
@@ -253,6 +253,6 @@ if __name__ == "__main__":
         sign = False
         if s.login():
             sign = s.sign()
-        send(title="喵子小屋签到", content=f"签到结果：{sign}")
+        send(title="喵子小屋签到", content=f"日志：{s.log()}\n签到结果：{sign}")
     else:
         print("请设置账号")

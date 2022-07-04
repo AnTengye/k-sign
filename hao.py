@@ -8,9 +8,9 @@ import os
 
 from scrapy import Selector
 
+from base import BaseSign
 from gifcode import handle_yzm
 from notify import send
-from base import BaseSign
 
 
 class HaoSign(BaseSign):
@@ -188,13 +188,13 @@ class HaoSign(BaseSign):
             try:
                 result = json.loads(response.text)
                 if result.get("code") == "1":
-                    print("登录失败：", self.err_msg_dict.get(result.get("msg", ""), result.get("msg", "")))
+                    self.pwl(f'登录失败：{self.err_msg_dict.get(result.get("msg", ""), result.get("msg", ""))}')
                     return self.login(times - 1)
                 elif result.get("code") == "0":
-                    print("登录成功")
+                    self.pwl("登录成功")
                     return True
                 else:
-                    print(result)
+                    self.pwl(result)
                     return self.login(times - 1)
             except Exception as e:
                 print("请求异常:\n", response.text)
@@ -228,11 +228,11 @@ if __name__ == "__main__":
         user_info = UP.split("|")
         username = user_info[0]
         password = user_info[1]
-        if username and password:
-            hao = HaoSign(username, password)
-            sign = False
-            if hao.login():
-                sign = hao.sign()
-            send(title="hao签到", content=f"签到结果：{sign}")
+        s = HaoSign(username, password)
+        sign = False
+        if s.login():
+            sign = s.sign()
+        send(title="hao签到", content=f"日志：{s.log()}\n签到结果：{sign}")
     else:
         print("请设置账号")
+

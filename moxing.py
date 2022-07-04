@@ -63,7 +63,7 @@ class MoxingSign(BaseSign):
         qd_response = self.session.get(self.sign_url)
         sign_selector = Selector(response=qd_response)
         sign_info = sign_selector.xpath('//*[@id="fx_checkin_b"]/@alt').extract_first()
-        print(f"当前状态：{sign_info}")
+        self.pwl(f"当前状态：{sign_info}")
         if sign_info and sign_info == "点击签到":
             print("进行签到中...")
             form_hash = sign_selector.xpath('//*[@id="scbar_form"]/input[2]/@value').extract_first()
@@ -73,8 +73,8 @@ class MoxingSign(BaseSign):
             sign_response = self.session.get(
                 f"{self.base_url}/plugin.php?id=k_misign:sign&operation=qiandao&format=global_usernav_extra&formhash={form_hash}&inajax=1&ajaxtarget=k_misign_topb")
             result_selector = Selector(response=sign_response)
-            # sign_info = sign_selector.re(r'alt="(.*?)"')
             result = result_selector.xpath("/root/text()").extract_first()
+            self.pwl(result)
             if result:
                 print(f'签到失败：{result}')
                 return False
@@ -95,6 +95,6 @@ if __name__ == "__main__":
         sign = False
         if s.login():
             sign = s.sign()
-        send(title="moxing签到", content=f"签到结果：{sign}")
+        send(title="moxing签到", content=f"日志：{s.log()}\n签到结果：{sign}")
     else:
         print("请设置账号")

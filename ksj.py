@@ -4,6 +4,7 @@ cron: 0 0 8 * * *
 new Env('4ksj签到');
 """
 import os
+import time
 from urllib.parse import quote
 
 from scrapy import Selector
@@ -63,8 +64,10 @@ if __name__ == "__main__":
         user_info = UP.split("|")
         username = user_info[0]
         password = user_info[1]
-        ksj = KsjSign(username, password)
-        if ksj.login():
-            send(title="ksj签到", content=f"签到结果：{ksj.sign()}")
+        s = KsjSign(username, password)
+        sign = False
+        if s.login():
+            sign = s.sign()
+        send(title="ksj签到", content=f"日志：{s.log()}\n签到结果：{sign}")
     else:
         print("请设置账号")
