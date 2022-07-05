@@ -58,7 +58,8 @@ class BaseSign:
 
     def pwl(self, c: str):
         print(c)
-        self.content.append(c)
+        if c:
+            self.content.append(c)
 
     def log(self) -> str:
         return "\n".join(self.content)
