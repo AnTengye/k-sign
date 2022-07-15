@@ -13,8 +13,8 @@ from notify import send
 
 
 class MoxingSign(BaseSign):
-    def __init__(self, username, password):
-        super(MoxingSign, self).__init__("https://moxing.finance", username, password)
+    def __init__(self, url, username, password):
+        super(MoxingSign, self).__init__(url, username, password)
 
     def login(self) -> bool:
         print(f"进行 {self.username} 登录")
@@ -86,12 +86,13 @@ class MoxingSign(BaseSign):
 
 
 if __name__ == "__main__":
+    url = os.getenv('SIGN_URL_MOXING')
     UP = os.getenv('SIGN_UP_MOXING')
     if UP:
         user_info = UP.split("|")
         username = user_info[0]
         password = user_info[1]
-        s = MoxingSign(username, password)
+        s = MoxingSign(url, username, password)
         sign = False
         if s.login():
             sign = s.sign()
