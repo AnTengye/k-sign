@@ -75,7 +75,7 @@ def gif_to_png(length, image) -> (int, bytes):
     return max_frame, None
 
 
-def handle_yzm(gif, char="", onnx="") -> str:
+def handle_yzm(img_data, char="", onnx="", t="gif") -> str:
     """
     处理验证码
     :return:
@@ -85,12 +85,14 @@ def handle_yzm(gif, char="", onnx="") -> str:
     print("验证码识别中...")
     result = ""
     start = time.time()
-    if gif:
-        data = BytesIO(gif)
+    if img_data and t == "gif":
+        data = BytesIO(img_data)
         image = Image.open(data)
         _, png_info = gif_to_png(length, image)
         if png_info:
             result = recogition2(png_info, char, onnx)
+    elif t == "img":
+        result = recogition2(img_data, char, onnx)
     end = time.time()
     print(f"验证码结果：{result}-花费时间：{end - start}")
     return result

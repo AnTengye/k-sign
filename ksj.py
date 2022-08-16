@@ -16,6 +16,12 @@ from notify import send
 class KsjSign(BaseSign):
     def __init__(self, username, password):
         super(KsjSign, self).__init__("https://www.4ksj.com", username, password)
+        # 签到配置
+        self.index_path = 'qiandao/'
+        self.sign_text_xpath = '//*[@id="wp"]/div[2]/div[1]/div[1]/div/div[1]/text()'
+        self.sign_text = '您今天还没有签到'
+        self.sign_path = "qiandao/?mod=sign&operation=qiandao&formhash=%s&format=empty"
+        self.form_hash_xpath = '//*[@id="scbar_form"]/input[2]/@value'
 
     def login(self) -> bool:
         print(f"进行 {self.username} 登录")
@@ -68,6 +74,6 @@ if __name__ == "__main__":
         sign = False
         if s.login():
             sign = s.sign()
-        send(title="ksj签到", content=f"日志：{s.log()}\n签到结果：{sign}")
+        send(title="ksj签到", content=f"日志：\n{s.log()}\n签到结果：{sign}")
     else:
         print("请设置账号")

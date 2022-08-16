@@ -15,6 +15,12 @@ from notify import send
 class MoxingSign(BaseSign):
     def __init__(self, url, username, password):
         super(MoxingSign, self).__init__(url, username, password)
+        # 签到配置
+        self.index_path = ''
+        self.sign_path = "plugin.php?id=k_misign:sign&operation=qiandao&format=global_usernav_extra&formhash=%s&inajax=1&ajaxtarget=k_misign_topb"
+        self.sign_text_xpath = '//*[@id="fx_checkin_b"]/@alt'
+        self.sign_text = '点击签到'
+        self.form_hash_xpath = '//*[@id="scbar_form"]/input[2]/@value'
 
     def login(self) -> bool:
         print(f"进行 {self.username} 登录")
@@ -59,31 +65,6 @@ class MoxingSign(BaseSign):
         print(f'登录成功')
         return True
 
-    def sign(self) -> bool:
-        qd_response = self.session.get(self.sign_url)
-        sign_selector = Selector(response=qd_response)
-        sign_info = sign_selector.xpath('//*[@id="fx_checkin_b"]/@alt').extract_first()
-        self.pwl(f"当前状态：{sign_info}")
-        if sign_info and sign_info == "点击签到":
-            print("进行签到中...")
-            form_hash = sign_selector.xpath('//*[@id="scbar_form"]/input[2]/@value').extract_first()
-            if form_hash == "":
-                print("获取签到表单验证失败")
-                return False
-            sign_response = self.session.get(
-                f"{self.base_url}/plugin.php?id=k_misign:sign&operation=qiandao&format=global_usernav_extra&formhash={form_hash}&inajax=1&ajaxtarget=k_misign_topb")
-            result_selector = Selector(response=sign_response)
-            result = result_selector.xpath("/root/text()").extract_first()
-            self.pwl(result)
-            if result:
-                print(f'签到失败：{result}')
-                return False
-            else:
-                print('签到成功')
-                return True
-        # TODO:获取签到积分信息
-        return True
-
 
 if __name__ == "__main__":
     url = os.getenv('SIGN_URL_MOXING')
@@ -96,6 +77,6 @@ if __name__ == "__main__":
         sign = False
         if s.login():
             sign = s.sign()
-        send(title="moxing签到", content=f"日志：{s.log()}\n签到结果：{sign}")
+        send(title="moxing签到", content=f"日志：\n{s.log()}\n签到结果：{sign}")
     else:
         print("请设置账号")
