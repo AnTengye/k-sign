@@ -17,13 +17,14 @@ from base import BaseSign
 
 class GTloliSign(BaseSign):
     def __init__(self, username, password):
-        super(GTloliSign, self).__init__("https://www.gtloli.gay", username, password)
+        super(GTloliSign, self).__init__("https://www.gtloli.gay", username, password, proxy=True)
         # 签到配置
         self.index_path = 'forum.php'
         self.form_hash_xpath = '//*[@id="scbar_form"]/input[2]/@value'
         self.sign_path = "plugin.php?id=k_misign:sign&operation=qiandao&format=button&formhash=%s"
         self.sign_text_xpath = '//*[@id="JD_sign"]/div/text()'
         self.sign_text = '签到'
+
 
 
     def login(self, times=1) -> bool:

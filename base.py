@@ -1,3 +1,4 @@
+import os
 from urllib.parse import urlparse, ParseResult
 
 import requests
@@ -146,14 +147,22 @@ class BaseSign:
         'msg_yanzheng_empty': '请输入验证问答答案',
     }
 
-    def __init__(self, base_url, username, password):
+    def __init__(self, base_url, username, password, proxy=False):
         self.url_info = urlparse(base_url)
         self.base_url = base_url
         self.username = username
         self.password = password
-        self.session = requests.session()
-        self.session.verify = False
         self.content = list()
+        self.session = requests.session()
+        if proxy:
+            proxy = os.getenv('SIGN_UP_PROXY')
+            if proxy is not None:
+                self.session.proxies.update({
+                    'http': 'http://' + proxy,
+                    'https': 'http://' + proxy
+                })
+        self.session.verify = False
+
         print(f"自助脚本初始化完成：{base_url}")
 
     def login(self) -> bool:
