@@ -184,7 +184,7 @@ class BaseSign:
                 f"{self.base_url}/{self.sign_path}" % form_hash)
             result_selector = Selector(response=response)
             result = result_selector.xpath("/root/text()").extract_first()
-            self.pwl(f"签到结果{result}")
+            self.pwl(f"签到异常信息：{result}")
             if result:
                 return False
             else:
