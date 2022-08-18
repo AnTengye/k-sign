@@ -19,7 +19,7 @@ class DJGameSign(BaseSign):
     onnx = "djgame_cd.onnx"
 
     def __init__(self, username, password):
-        super(DJGameSign, self).__init__("https://bbs4.2djgame.net/home", username, password)
+        super(DJGameSign, self).__init__("https://bbs4.2djgame.net/home", username, password, proxy=True)
 
     def login(self, times=3) -> bool:
         if times == 0:
