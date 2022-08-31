@@ -173,23 +173,28 @@ class BaseSign:
         qd_response = self.session.get(f"{self.base_url}/{self.index_path}")
         sign_selector = Selector(response=qd_response)
         sign_info = sign_selector.xpath(self.sign_text_xpath).extract_first()
-        self.pwl(sign_info)
-        if sign_info and sign_info.strip() == self.sign_text:
-            self.pwl("进行签到中...")
-            form_hash = sign_selector.xpath(self.form_hash_xpath).extract_first()
-            if form_hash == "":
-                self.pwl("获取签到表单验证失败")
-                return False
-            response = self.session.get(
-                f"{self.base_url}/{self.sign_path}" % form_hash)
-            result_selector = Selector(response=response)
-            result = result_selector.xpath("/root/text()").extract_first()
-            self.pwl(f"签到异常信息：{result}")
-            if result:
-                return False
+        if sign_info:
+            self.pwl(sign_info.strip())
+            if sign_info.strip() == self.sign_text:
+                self.pwl("进行签到中...")
+                form_hash = sign_selector.xpath(self.form_hash_xpath).extract_first()
+                if form_hash == "":
+                    self.pwl("获取签到表单验证失败")
+                    return False
+                response = self.session.get(
+                    f"{self.base_url}/{self.sign_path}" % form_hash)
+                result_selector = Selector(response=response)
+                result = result_selector.xpath("/root/text()").extract_first()
+                self.pwl(f"签到异常信息：{result}")
+                if result:
+                    return False
+                else:
+                    return True
             else:
                 return True
-        return True
+        else:
+            self.pwl("签到信息获取失败，网站可能发生变更")
+            return False
 
     def pwl(self, c: str):
         print(c)
