@@ -78,6 +78,8 @@ class GTloliSign(BaseSign):
                 self.session.get(jump_src[0])
             print(f'登录成功')
             return True
+        else:
+            self.pwl("链接访问异常")
 
     def code(self, sec_hash, update, times=3) -> str:
         if times == 0:

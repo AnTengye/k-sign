@@ -173,7 +173,7 @@ class BaseSign:
         qd_response = self.session.get(f"{self.base_url}/{self.index_path}")
         sign_selector = Selector(response=qd_response)
         sign_info = sign_selector.xpath(self.sign_text_xpath).extract_first()
-        self.pwl(sign_info.strip())
+        self.pwl(sign_info)
         if sign_info and sign_info.strip() == self.sign_text:
             self.pwl("进行签到中...")
             form_hash = sign_selector.xpath(self.form_hash_xpath).extract_first()
