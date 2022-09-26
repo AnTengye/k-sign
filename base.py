@@ -1,4 +1,6 @@
 import os
+import secrets
+import string
 from urllib.parse import urlparse, ParseResult
 
 import requests
@@ -203,3 +205,7 @@ class BaseSign:
 
     def log(self) -> str:
         return "\n".join(self.content)
+
+    def uid(self, length=32) -> str:
+        alphabet = string.ascii_letters + string.digits
+        return ''.join(secrets.choice(alphabet) for _ in range(length))
