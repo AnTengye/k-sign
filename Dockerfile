@@ -119,7 +119,7 @@ ENV PYTHON_PIP_VERSION 22.0.4
 # https://github.com/docker-library/python/issues/365
 ENV PYTHON_SETUPTOOLS_VERSION 57.5.0
 # https://github.com/pypa/get-pip
-ENV PYTHON_GET_PIP_URL https://hub.fastgit.xyz/pypa/get-pip/raw/6ce3639da143c5d79b44f94b04080abf2531fd6e/public/get-pip.py
+ENV PYTHON_GET_PIP_URL https://github.com/pypa/get-pip/raw/6ce3639da143c5d79b44f94b04080abf2531fd6e/public/get-pip.py
 ENV PYTHON_GET_PIP_SHA256 ba3ab8267d91fd41c58dbce08f76db99f747f716d85ce1865813842bb035524d
 
 RUN set -eux; \
@@ -149,10 +149,10 @@ RUN set -eux; \
 	\
 	pip --version
 
-ARG QL_MAINTAINER="whyour"
+ARG QL_MAINTAINER="AnTengye"
 LABEL maintainer="${QL_MAINTAINER}"
-ARG QL_URL=https://hub.fastgit.xyz/${QL_MAINTAINER}/qinglong.git
-ARG QL_BRANCH=master
+ARG QL_URL=https://github.com/${QL_MAINTAINER}/qinglong.git
+ARG QL_BRANCH=develop
 
 ENV PNPM_HOME=/root/.local/share/pnpm \
     PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/share/pnpm:/root/.local/share/pnpm/global/5/node_modules:$PNPM_HOME \
@@ -195,7 +195,7 @@ RUN set -x \
     && rm -rf /root/.local/share/pnpm/store \
     && rm -rf /root/.cache \
     && rm -rf /root/.npm \
-    && git clone -b ${QL_BRANCH} https://hub.fastgit.xyz/${QL_MAINTAINER}/qinglong-static.git /static \
+    && git clone -b ${QL_BRANCH} https://github.com/${QL_MAINTAINER}/qinglong-static.git /static \
     && mkdir -p ${QL_DIR}/static \
     && cp -rf /static/* ${QL_DIR}/static \
     && rm -rf /static
