@@ -92,7 +92,7 @@ class MiaoSign(BaseSign):
 
     def sign(self) -> bool:
         print("每日签到开始")
-        url = f"{self.base_url}/home.php?mod=task&do=apply&id=22"
+        url = f"{self.base_url}/home.php?mod=task&do=apply&id=14"
         payload = {}
         headers = {
             'authority': self.url_info.hostname,
