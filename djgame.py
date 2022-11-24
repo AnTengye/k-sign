@@ -66,7 +66,7 @@ class DJGameSign(BaseSign):
                 return self.login(times - 1)
             else:
                 self.session.get(jump_src[0])
-            print(f'登录成功')
+                print(f'登录成功')
             return True
 
     def code(self, sec_hash, times=3) -> str:

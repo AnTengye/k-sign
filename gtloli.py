@@ -76,7 +76,7 @@ class GTloliSign(BaseSign):
                 return self.login(times - 1)
             else:
                 self.session.get(jump_src[0])
-            print(f'登录成功')
+                print(f'登录成功')
             return True
         else:
             self.pwl("链接访问异常")

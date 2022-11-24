@@ -1,9 +1,10 @@
 # -*- coding:utf-8 -*-
 """
 cron: 0 0 8 * * *
-new Env('moxing签到');
+new Env('ACG次元小屋签到');
 """
 import os
+import time
 from urllib.parse import quote
 
 from scrapy import Selector
@@ -12,23 +13,17 @@ from base import BaseSign
 from notify import send
 
 
-class MoxingSign(BaseSign):
-    def __init__(self, url, username, password):
-        super(MoxingSign, self).__init__(url, username, password)
-        # 签到配置
-        self.index_path = ''
-        self.sign_path = "plugin.php?id=k_misign:sign&operation=qiandao&format=global_usernav_extra&formhash=%s&inajax=1&ajaxtarget=k_misign_topb"
-        self.sign_text_xpath = '//*[@id="fx_checkin_b"]/@alt'
-        self.sign_text = '点击签到'
-        self.form_hash_xpath = '//*[@id="scbar_form"]/input[2]/@value'
+class YuanACGSign(BaseSign):
+    def __init__(self, username, password):
+        super(YuanACGSign, self).__init__("https://note.yuanacg.com", username, password)
 
     def login(self) -> bool:
         print(f"进行 {self.username} 登录")
         response = self.session.get(f"{self.base_url}/member.php?mod=logging&action=login")
         selector = Selector(response=response)
-        form_hash = selector.xpath('//*[@id="scbar_form"]/input[2]/@value').extract_first()
-        url = f"{self.base_url}/member.php?mod=logging&action=login&loginsubmit=yes&loginhash=LocOL&inajax=1"
-        payload = f'formhash={form_hash}&referer={quote(self.base_url, safe="")}%2Fportal.php&username={self.username}&password={self.password}&questionid=0&answer=&cookietime=2592000'
+        form_hash = selector.xpath('//form[@name="login"]/div/input[1]/@value').extract_first()
+        url = f"{self.base_url}/member.php?mod=logging&action=login&loginsubmit=yes&loginhash=Lo37m&inajax=1"
+        payload = f'formhash={form_hash}&referer={quote(self.base_url, safe="")}%2Fforum.php&username={self.username}&password={self.password}&questionid=0&answer=&cookietime=2592000'
         headers = {
             'authority': self.url_info.hostname,
             'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,'
@@ -62,21 +57,33 @@ class MoxingSign(BaseSign):
             return False
         else:
             self.sign_url = jump_src[0]
-        self.pwl('登录成功')
+            self.pwl('登录成功')
+        return True
+
+    def sign(self) -> bool:
+        qd_response = self.session.get(f"{self.sign_url}")
+        sign_selector = Selector(response=qd_response)
+        sign_url = sign_selector.xpath('//*[@id="toptb"]/div/div[1]/a[3]/@href').extract_first()
+        if sign_url is None:
+            self.pwl("已签到,请不要重新签到！")
+            return True
+        click_qd_response = self.session.get(f"{self.base_url}/{sign_url}")
+        click_selector = Selector(response=click_qd_response)
+        result = click_selector.xpath('//*[@id="messagetext"]/p[1]/text()').extract_first()
+        self.pwl(result)
         return True
 
 
 if __name__ == "__main__":
-    url = os.getenv('SIGN_URL_MOXING')
-    UP = os.getenv('SIGN_UP_MOXING')
+    UP = os.getenv('SIGN_UP_YACG')
     if UP:
         user_info = UP.split("|")
         username = user_info[0]
         password = user_info[1]
-        s = MoxingSign(url, username, password)
+        s = YuanACGSign(username, password)
         sign = False
         if s.login():
             sign = s.sign()
-        send(title="moxing签到", content=f"日志：\n{s.log()}\n签到结果：{sign}")
+        send(title="YuanACG签到", content=f"日志：\n{s.log()}\n签到结果：{sign}")
     else:
         print("请设置账号")
