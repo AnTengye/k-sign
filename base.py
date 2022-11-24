@@ -1,7 +1,7 @@
 import os
 import secrets
 import string
-from urllib.parse import urlparse, ParseResult
+from urllib.parse import urlparse, ParseResult, quote
 
 import requests
 from scrapy import Selector
@@ -25,6 +25,8 @@ class BaseSign:
     sign_path: str  # 签到请求链接
     sign_text_xpath: str  # 签到文本匹配路径
     sign_text: str  # 签到文本
+    sign_method: str = "get"  # 签到方式，get/post
+    sign_mood: str = "very very good"  # 签到心情（仅post可用）
 
     err_msg_dict = {
         'msg_captcha_notopen': '该验证功能未开启',
@@ -183,20 +185,63 @@ class BaseSign:
                 if form_hash == "":
                     self.pwl("获取签到表单验证失败")
                     return False
-                response = self.session.get(
-                    f"{self.base_url}/{self.sign_path}" % form_hash)
-                result_selector = Selector(response=response)
-                result = result_selector.xpath("/root/text()").extract_first()
-                self.pwl(f"签到异常信息：{result}")
-                if result:
-                    return False
+                if self.sign_method == "post":
+                    return self._post_sign(form_hash)
                 else:
-                    return True
+                    return self._get_sign(form_hash)
             else:
                 return True
         else:
             self.pwl("签到信息获取失败，网站可能发生变更")
             return False
+
+    def _get_sign(self, form_hash) -> bool:
+        response = self.session.get(
+            f"{self.base_url}/{self.sign_path}" % form_hash)
+        result_selector = Selector(response=response)
+        result = result_selector.xpath("/root/text()").extract_first()
+        self.pwl(f"签到异常信息：{result}")
+        if result:
+            return False
+        else:
+            return True
+
+    def _post_sign(self, form_hash) -> bool:
+        url = f"{self.base_url}/plugin.php?id=dc_signin:sign&inajax=1"
+        payload = f'formhash={form_hash}&signsubmit=yes&handlekey=signin&emotid=1&referer={quote(self.base_url, safe="")}%2Fdc_signin-dc_signin.html&content={self.sign_mood}'
+        headers = {
+            'authority': self.url_info.hostname,
+            'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
+            'accept-language': 'zh-CN,zh;q=0.9,en;q=0.8,zh-TW;q=0.7',
+            'cache-control': 'no-cache',
+            'content-type': 'application/x-www-form-urlencoded',
+            'origin': self.base_url,
+            'pragma': 'no-cache',
+            'referer': f'{self.base_url}/dc_signin-dc_signin.html',
+            'sec-ch-ua': '"Google Chrome";v="107", "Chromium";v="107", "Not=A?Brand";v="24"',
+            'sec-ch-ua-mobile': '?0',
+            'sec-ch-ua-platform': '"Windows"',
+            'sec-fetch-dest': 'iframe',
+            'sec-fetch-mode': 'navigate',
+            'sec-fetch-site': 'same-origin',
+            'sec-fetch-user': '?1',
+            'upgrade-insecure-requests': '1',
+            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36'
+        }
+
+        response = self.session.post(url, headers=headers, data=payload)
+        result_selector = Selector(response=response)
+        jump_src = result_selector.re(r"succeedhandle_signin\('(.*?)', '(.*)'")
+        if len(jump_src) == 0:
+            result = result_selector.re(r'errorhandle_signin\((.*?),')
+            if len(result) == 0:
+                self.pwl(f'签到失败:{response.text}')
+                return False
+            self.pwl(result[0])
+            return False
+        else:
+            self.pwl(jump_src[1])
+        return True
 
     def pwl(self, c: str):
         print(c)
