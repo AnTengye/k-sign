@@ -1,4 +1,5 @@
 import base64
+import traceback
 
 import ddddocr
 import requests
@@ -40,7 +41,11 @@ def recogition2(yzm_data, char="", onnx=""):
     # print(base64_str.decode("utf-8"))
     ocr = ddddocr.DdddOcr(show_ad=False, import_onnx_path=onnx,
                           charsets_path=char)
-    res = ocr.classification(yzm_data)
+    try:
+        res = ocr.classification(yzm_data)
+    except Exception as e:
+        traceback.print_exc()
+        return ""
     return res
 
 
@@ -87,7 +92,11 @@ def handle_yzm(img_data, char="", onnx="", t="gif") -> str:
     start = time.time()
     if img_data and t == "gif":
         data = BytesIO(img_data)
-        image = Image.open(data)
+        try:
+            image = Image.open(data)
+        except Exception as e:
+            traceback.print_exc()
+            return ""
         _, png_info = gif_to_png(length, image)
         if png_info:
             result = recogition2(png_info, char, onnx)
