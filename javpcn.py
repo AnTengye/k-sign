@@ -17,7 +17,7 @@ from notify import send
 
 class JavPlayerSign(BaseSign):
     def __init__(self, username, password):
-        super(JavPlayerSign, self).__init__("http://javpcn.com/", username, password)
+        super(JavPlayerSign, self).__init__("http://javpcn.com", username, password)
         # 签到配置
         self.index_path = 'qiandao/'
         self.sign_text_xpath = '//*[@id="wp"]/div[3]/div[1]/div[1]/div/div[1]/text()'

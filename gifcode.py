@@ -29,20 +29,24 @@ def recogition(yzm_data):
     return yzm_text
 
 
-def recogition2(yzm_data, char="", onnx=""):
+def recogition2(yzm_data, char="", onnx="", debug=False):
     """
     验证码识别
+    :param debug:
     :param onnx: 自定义训练模型
     :param char: 自定义字符集
     :param yzm_data:
     :return:
     """
-    # base64_str = base64.b64encode(yzm_data)
-    # print(base64_str.decode("utf-8"))
     ocr = ddddocr.DdddOcr(show_ad=False, import_onnx_path=onnx,
                           charsets_path=char)
     try:
         res = ocr.classification(yzm_data)
+        if debug:
+            base64_str = base64.b64encode(yzm_data)
+            print(base64_str.decode("utf-8"))
+            with open(f"debug/{res}.jpg", "wb") as fp:
+                fp.write(yzm_data)
     except Exception as e:
         traceback.print_exc()
         return ""
@@ -111,4 +115,4 @@ if __name__ == '__main__':
     data = b''
     gif = base64.b64decode(data)
     # 识别图片个数
-    handle_yzm(gif)
+    handle_yzm(gif, t="img")
