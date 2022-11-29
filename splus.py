@@ -236,7 +236,7 @@ class SouthPlusSign(BaseSign):
         return False
 
     def get_now(self) -> int:
-        return self.get_now()
+        return int(round(time.time() * 1000))
 
 
 if __name__ == "__main__":
