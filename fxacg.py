@@ -4,7 +4,6 @@ cron: 0 15 8 * * *
 new Env('飞雪acg签到');
 """
 import os
-import re
 from urllib.parse import quote
 
 from scrapy import Selector
@@ -128,29 +127,6 @@ class FXAcgSign(BaseSign):
                 return result
             else:
                 self.pwl(f"校验失败：{check_response.text}")
-        else:
-            self.pwl(f"not found code url:{response.text}")
-        # 重新获取
-        recap_url = f"{self.base_url}/misc.php?mod=seccode&action=update&idhash={sec_hash}&0.03544528991822604&modid=member::logging"
-        recap_headers = {
-            'authority': self.url_info.hostname,
-            'accept': '*/*',
-            'accept-language': 'zh-CN,zh;q=0.9',
-            'cache-control': 'no-cache',
-            'pragma': 'no-cache',
-            'referer': f'{self.base_url}/member.php?mod=logging&action=login',
-            'sec-ch-ua': '".Not/A)Brand";v="99", "Google Chrome";v="103", "Chromium";v="103"',
-            'sec-ch-ua-mobile': '?0',
-            'sec-ch-ua-platform': '"Windows"',
-            'sec-fetch-dest': 'empty',
-            'sec-fetch-mode': 'cors',
-            'sec-fetch-site': 'same-origin',
-            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/103.0.0.0 Safari/537.36',
-            'x-requested-with': 'XMLHttpRequest'
-        }
-        recap_response = self.session.get(recap_url, headers=recap_headers, data={})
-        update_data = re.search(r"&update=([0-9]*)&", recap_response.text, flags=0)
-        update = update_data.groups(1)
         return self.code(sec_hash, update, times - 1)
 
     # TODO:访问别人空间

@@ -130,32 +130,6 @@ class GTloliSign(BaseSign):
                 return result
             else:
                 self.pwl(f"校验失败：{check_response.text}")
-        else:
-            yzm_selector = Selector(response=response)
-            error_msg = yzm_selector.xpath('//*[@id="container"]/div[3]/text()').extract_first()
-            self.pwl(f"not found code url:{error_msg}")
-        # 重新获取
-        recap_url = f"{self.base_url}/misc.php?mod=seccode&action=update&idhash={sec_hash}&0.03544528991822604&modid=member::logging"
-        recap_headers = {
-            'authority': self.url_info.hostname,
-            'accept': '*/*',
-            'accept-language': 'zh-CN,zh;q=0.9',
-            'cache-control': 'no-cache',
-            'pragma': 'no-cache',
-            'referer': f'{self.base_url}/member.php?mod=logging&action=login',
-            'sec-ch-ua': '".Not/A)Brand";v="99", "Google Chrome";v="103", "Chromium";v="103"',
-            'sec-ch-ua-mobile': '?0',
-            'sec-ch-ua-platform': '"Windows"',
-            'sec-fetch-dest': 'empty',
-            'sec-fetch-mode': 'cors',
-            'sec-fetch-site': 'same-origin',
-            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/103.0.0.0 Safari/537.36',
-            'x-requested-with': 'XMLHttpRequest'
-        }
-        recap_response = self.session.get(recap_url, headers=recap_headers, data={})
-        update_data = re.search(r"&update=([0-9]*)&", recap_response.text, flags=0)
-        update = update_data.groups(1)
-        print("recap", recap_response.text)
         return self.code(sec_hash, update, times - 1)
 
 
