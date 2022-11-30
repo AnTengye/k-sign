@@ -27,7 +27,7 @@ class GTloliSign(BaseSign):
 
 
 
-    def login(self, times=1) -> bool:
+    def login(self, times=2) -> bool:
         if times == 0:
             print("失败次数过多")
             return False
@@ -131,7 +131,9 @@ class GTloliSign(BaseSign):
             else:
                 self.pwl(f"校验失败：{check_response.text}")
         else:
-            self.pwl(f"not found code url:{response.text}")
+            yzm_selector = Selector(response=response)
+            error_msg = yzm_selector.xpath('//*[@id="container"]/div[3]/text()').extract_first()
+            self.pwl(f"not found code url:{error_msg}")
         # 重新获取
         recap_url = f"{self.base_url}/misc.php?mod=seccode&action=update&idhash={sec_hash}&0.03544528991822604&modid=member::logging"
         recap_headers = {
@@ -153,6 +155,7 @@ class GTloliSign(BaseSign):
         recap_response = self.session.get(recap_url, headers=recap_headers, data={})
         update_data = re.search(r"&update=([0-9]*)&", recap_response.text, flags=0)
         update = update_data.groups(1)
+        print("recap", recap_response.text)
         return self.code(sec_hash, update, times - 1)
 
 
