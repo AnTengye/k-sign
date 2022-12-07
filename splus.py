@@ -167,6 +167,8 @@ class SouthPlusSign(BaseSign):
 
     def sign(self) -> bool:
         self.fetch_sign()
+        if self.apply_task(14):
+            self.confirm_task(14)
         self.apply_task(15)
         result = self.confirm_task(15)
         return result
