@@ -18,8 +18,11 @@ class DJGameSign(BaseSign):
     char = "djgame_char.json"
     onnx = "djgame_cd.onnx"
 
-    def __init__(self, username, password):
-        super(DJGameSign, self).__init__("https://bbs4.2djgame.net/home", username, password, proxy=True)
+    def __init__(self):
+        super(DJGameSign, self).__init__("https://bbs4.2djgame.net/home", app_name="2djgame", app_key="2DJ",
+                                         proxy=True)
+        # 支持的方法
+        self.exec_method = ["sign"]
 
     def login(self, times=3) -> bool:
         if times == 0:
@@ -179,15 +182,5 @@ class DJGameSign(BaseSign):
 
 
 if __name__ == "__main__":
-    UP = os.getenv('SIGN_UP_2DJ')
-    if UP:
-        user_info = UP.split("|")
-        username = user_info[0]
-        password = user_info[1]
-        s = DJGameSign(username, password)
-        sign = False
-        if s.login():
-            sign = s.sign()
-        send(title="2djgame签到", content=f"日志：{s.log()}\n签到结果：{sign}")
-    else:
-        print("请设置账号")
+    s = DJGameSign()
+    s.run()

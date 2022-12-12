@@ -3,19 +3,20 @@
 cron: 0 15 8 * * *
 new Env('飞雪acg签到');
 """
-import os
 from urllib.parse import quote
 
 from scrapy import Selector
 
 from gifcode import handle_yzm
-from notify import send
 from base import BaseSign
 
 
 class FXAcgSign(BaseSign):
-    def __init__(self, username, password):
-        super(FXAcgSign, self).__init__("https://fxacg.net", username, password, proxy=True)
+    def __init__(self):
+        super(FXAcgSign, self).__init__("https://fxacg.net", app_name="飞雪ACG", app_key="FXACG",
+                                        proxy=True)
+        # 支持的方法
+        self.exec_method = ["sign"]
         # 签到配置
         self.index_path = 'dc_signin-dc_signin.html'
         self.form_hash_xpath = '//*[@id="scbar_form"]/input[2]/@value'
@@ -133,15 +134,5 @@ class FXAcgSign(BaseSign):
 
 
 if __name__ == "__main__":
-    UP = os.getenv('SIGN_UP_FXACG')
-    if UP:
-        user_info = UP.split("|")
-        username = user_info[0]
-        password = user_info[1]
-        s = FXAcgSign(username, password)
-        sign = False
-        if s.login():
-            sign = s.sign()
-        send(title="飞雪ACG签到", content=f"日志：\n{s.log()}\n签到结果：{sign}")
-    else:
-        print("请设置账号")
+    s = FXAcgSign()
+    s.run()

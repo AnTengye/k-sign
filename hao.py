@@ -4,18 +4,18 @@ cron: 0 0 8 * * *
 new Env('hao4k签到');
 """
 import json
-import os
 
 from scrapy import Selector
 
 from base import BaseSign
 from gifcode import handle_yzm
-from notify import send
 
 
 class HaoSign(BaseSign):
-    def __init__(self, username, password):
-        super(HaoSign, self).__init__("https://www.hao4k.cn", username, password)
+    def __init__(self):
+        super(HaoSign, self).__init__("https://www.hao4k.cn", app_name="hao4k", app_key="4K")
+        # 支持的方法
+        self.exec_method = ["sign"]
         # 签到配置
         self.index_path = 'qiandao/'
         self.sign_text_xpath = '//*[@id="wp"]/div[3]/div[1]/div[1]/div/div[1]/text()'
@@ -106,16 +106,5 @@ class HaoSign(BaseSign):
 
 
 if __name__ == "__main__":
-    UP = os.getenv('SIGN_UP_4K')
-    if UP:
-        user_info = UP.split("|")
-        username = user_info[0]
-        password = user_info[1]
-        s = HaoSign(username, password)
-        sign = False
-        if s.login():
-            sign = s.sign()
-        send(title="hao签到", content=f"日志：\n{s.log()}\n签到结果：{sign}")
-    else:
-        print("请设置账号")
-
+    s = HaoSign()
+    s.run()

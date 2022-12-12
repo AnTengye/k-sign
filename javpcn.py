@@ -16,8 +16,10 @@ from notify import send
 
 
 class JavPlayerSign(BaseSign):
-    def __init__(self, username, password):
-        super(JavPlayerSign, self).__init__("http://javpcn.com", username, password)
+    def __init__(self):
+        super(JavPlayerSign, self).__init__("http://javpcn.com", app_name="JavPlater", app_key="JAVPCN")
+        # 支持的方法
+        self.exec_method = []
         # 签到配置
         self.index_path = 'qiandao/'
         self.sign_text_xpath = '//*[@id="wp"]/div[3]/div[1]/div[1]/div/div[1]/text()'
@@ -131,13 +133,5 @@ class JavPlayerSign(BaseSign):
 
 
 if __name__ == "__main__":
-    UP = os.getenv('SIGN_UP_JAVPCN')
-    if UP:
-        user_info = UP.split("|")
-        username = user_info[0]
-        password = user_info[1]
-        s = JavPlayerSign(username, password)
-        sign = s.login()
-        send(title="JavPlayer登录", content=f"日志：\n{s.log()}\n登录结果：{sign}")
-    else:
-        print("请设置账号")
+    s = JavPlayerSign()
+    s.run()

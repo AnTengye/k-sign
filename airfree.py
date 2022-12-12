@@ -3,16 +3,16 @@
 cron: 0 3 8 * * *
 new Env('机场-airfree');
 """
-import os
 
 from base import BaseSign
-from notify import send
 from urllib.parse import quote
 
 
 class AirFreeSign(BaseSign):
-    def __init__(self, username, password):
-        super(AirFreeSign, self).__init__("https://airfree.cloud", username, password)
+    def __init__(self):
+        super(AirFreeSign, self).__init__("https://airfree.cloud", app_name="airfree机场", app_key="AIRFREE")
+        # 支持的方法
+        self.exec_method = ["sign"]
 
     def login(self) -> bool:
         url = self.base_url + "/auth/login"
@@ -55,15 +55,5 @@ class AirFreeSign(BaseSign):
 
 
 if __name__ == "__main__":
-    UP = os.getenv('SIGN_UP_AIRFREE')
-    if UP:
-        user_info = UP.split("|")
-        username = user_info[0]
-        password = user_info[1]
-        s = AirFreeSign(username, password)
-        sign = False
-        if s.login():
-            sign = s.sign()
-        send(title="airfree签到", content=f"日志：{s.log()}\n签到结果：{sign}")
-    else:
-        print("请设置账号")
+    s = AirFreeSign()
+    s.run()

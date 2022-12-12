@@ -1,13 +1,19 @@
 import os
 import secrets
 import string
+import traceback
 from urllib.parse import urlparse, ParseResult, quote
 
 import requests
 from scrapy import Selector
 import requests.packages.urllib3
+from requests.adapters import HTTPAdapter
+
+from notify import send
 
 requests.packages.urllib3.disable_warnings()
+
+DEFAULT_TIMEOUT = 5  # seconds
 
 
 class BaseSign:
@@ -16,9 +22,12 @@ class BaseSign:
     base_url: str
     url_info: ParseResult
     content: list
+    exec_method: list
     # 用户信息配置
     username: str
     password: str
+    app_name: str
+    app_key: str
     # 签到页配置
     index_path: str  # 签到页面路径
     form_hash_xpath: str  # 签到页面formhash
@@ -151,13 +160,27 @@ class BaseSign:
         'msg_yanzheng_empty': '请输入验证问答答案',
     }
 
-    def __init__(self, base_url, username, password, proxy=False):
+    def __init__(self, base_url, app_name, app_key, proxy=False):
+        if base_url == "":
+            base_url = os.getenv(f'SIGN_URL_{app_key}')
+            if base_url == "":
+                raise f"未设置网址，请添加变量:SIGN_URL_{app_key}"
         self.url_info = urlparse(base_url)
         self.base_url = base_url
-        self.username = username
-        self.password = password
+        up = os.getenv(f'SIGN_UP_{app_key}')
+        if up:
+            user_info = up.split("|")
+            self.username = user_info[0]
+            self.password = user_info[1]
+        else:
+            raise f"未设置账号信息，请添加变量SIGN_UP_{app_key}"
+        self.app_name = app_name
         self.content = list()
-        self.session = requests.session()
+        session = requests.session()
+        adapter = TimeoutHTTPAdapter(timeout=5)
+        session.mount("https://", adapter)
+        session.mount("http://", adapter)
+        self.session = session
         if proxy:
             proxy = os.getenv('SIGN_UP_PROXY')
             if proxy is not None:
@@ -196,6 +219,11 @@ class BaseSign:
             return False
 
     def _get_sign(self, form_hash) -> bool:
+        """
+        适用于get请求的通用签到
+        :param form_hash: 前端表单校验码
+        :return:
+        """
         response = self.session.get(
             f"{self.base_url}/{self.sign_path}" % form_hash)
         result_selector = Selector(response=response)
@@ -207,6 +235,11 @@ class BaseSign:
             return True
 
     def _post_sign(self, form_hash) -> bool:
+        """
+        适用于post请求的通用签到
+        :param form_hash: 前端表单校验码
+        :return:
+        """
         url = f"{self.base_url}/plugin.php?id=dc_signin:sign&inajax=1"
         payload = f'formhash={form_hash}&signsubmit=yes&handlekey=signin&emotid=1&referer={quote(self.base_url, safe="")}%2Fdc_signin-dc_signin.html&content={self.sign_mood}'
         headers = {
@@ -244,13 +277,61 @@ class BaseSign:
         return True
 
     def pwl(self, c: str):
+        """
+        日志记录
+        :param c:
+        :return:
+        """
         print(c)
         if c:
             self.content.append(c)
 
     def log(self) -> str:
+        """
+        返回日志
+        :return:
+        """
         return "\n".join(self.content)
 
     def uid(self, length=32) -> str:
+        """
+        生成随机的uid
+        :param length:
+        :return:
+        """
         alphabet = string.ascii_letters + string.digits
         return ''.join(secrets.choice(alphabet) for _ in range(length))
+
+    def run(self):
+        try:
+            login = self.login()
+            result = {"登录": login}
+            if login and len(self.exec_method) != 0:
+                for v in self.exec_method:
+                    func = getattr(self, v)
+                    result[v] = func()
+            content = ""
+            for k, r in result.items():
+                content += f"{k} 结果：{r}\n"
+            content += f"日志：\n{self.log()}"
+            send(title=self.app_name, content=content)
+        except requests.exceptions.RequestException as e:
+            traceback.print_exc()
+            send(title=self.app_name, content="网络请求有误，请检查代理设置")
+        except Exception as e:
+            traceback.print_exc()
+
+
+class TimeoutHTTPAdapter(HTTPAdapter):
+    def __init__(self, *args, **kwargs):
+        self.timeout = DEFAULT_TIMEOUT
+        if "timeout" in kwargs:
+            self.timeout = kwargs["timeout"]
+            del kwargs["timeout"]
+        super().__init__(*args, **kwargs)
+
+    def send(self, request, **kwargs):
+        timeout = kwargs.get("timeout")
+        if timeout is None:
+            kwargs["timeout"] = self.timeout
+        return super().send(request, **kwargs)

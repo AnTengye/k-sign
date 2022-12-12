@@ -3,29 +3,26 @@
 cron: 0 0 9 * * *
 new Env('哥特萝莉签到');
 """
-import json
-import os
-import re
 from urllib.parse import quote
 
 from scrapy import Selector
 
 from gifcode import handle_yzm
-from notify import send
 from base import BaseSign
 
 
 class GTloliSign(BaseSign):
-    def __init__(self, username, password):
-        super(GTloliSign, self).__init__("https://www.gtloli.gay", username, password, proxy=True)
+    def __init__(self):
+        super(GTloliSign, self).__init__("https://www.gtloli.gay", app_name="哥特萝莉", app_key="GTLL",
+                                         proxy=True)
+        # 支持的方法
+        self.exec_method = ["sign"]
         # 签到配置
         self.index_path = 'forum.php'
         self.form_hash_xpath = '//*[@id="scbar_form"]/input[2]/@value'
         self.sign_path = "plugin.php?id=k_misign:sign&operation=qiandao&format=button&formhash=%s"
         self.sign_text_xpath = '//*[@id="JD_sign"]/div/text()'
         self.sign_text = '签到'
-
-
 
     def login(self, times=2) -> bool:
         if times == 0:
@@ -67,7 +64,6 @@ class GTloliSign(BaseSign):
                 'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/102.0.0.0 Safari/537.36'
             }
             response = self.session.post(url, headers=headers, data=payload)
-            #
             result_selector = Selector(response=response)
             jump_src = result_selector.re(r"succeedhandle_\('(.*?)'")
             if len(jump_src) == 0:
@@ -134,15 +130,5 @@ class GTloliSign(BaseSign):
 
 
 if __name__ == "__main__":
-    UP = os.getenv('SIGN_UP_GTLL')
-    if UP:
-        user_info = UP.split("|")
-        username = user_info[0]
-        password = user_info[1]
-        s = GTloliSign(username, password)
-        sign = False
-        if s.login():
-            sign = s.sign()
-        send(title="哥特萝莉签到", content=f"日志：\n{s.log()}\n签到结果：{sign}")
-    else:
-        print("请设置账号")
+    s = GTloliSign()
+    s.run()

@@ -3,18 +3,18 @@
 cron: 0 0 0 * * *
 new Env('司机社签到');
 """
-import os
 from urllib.parse import quote
 
 from scrapy import Selector
 
 from base import BaseSign
-from notify import send
 
 
 class SiJiSSign(BaseSign):
-    def __init__(self, username, password):
-        super(SiJiSSign, self).__init__("https://sijishea.com", username, password)
+    def __init__(self):
+        super(SiJiSSign, self).__init__("https://sijishea.com", app_name="司机社", app_key="SJS")
+        # 支持的方法
+        self.exec_method = ["sign"]
         # 签到配置
         self.index_path = 'k_misign-sign.html'
         self.form_hash_xpath = '//*[@id="scbar_form"]/input[2]/@value'
@@ -67,15 +67,5 @@ class SiJiSSign(BaseSign):
 
 
 if __name__ == "__main__":
-    UP = os.getenv('SIGN_UP_SJS')
-    if UP:
-        user_info = UP.split("|")
-        username = user_info[0]
-        password = user_info[1]
-        s = SiJiSSign(username, password)
-        sign = False
-        if s.login():
-            sign = s.sign()
-        send(title="司机社签到", content=f"日志：\n{s.log()}\n签到结果：{sign}")
-    else:
-        print("请设置账号")
+    s = SiJiSSign()
+    s.run()

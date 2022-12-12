@@ -3,8 +3,6 @@
 cron: 0 0 18 * * *
 new Env('南+登录');
 """
-import json
-import os
 import re
 import time
 from urllib.parse import quote
@@ -13,12 +11,13 @@ from scrapy import Selector
 
 from base import BaseSign
 from gifcode import handle_yzm
-from notify import send
 
 
 class SouthPlusSign(BaseSign):
-    def __init__(self, username, password):
-        super(SouthPlusSign, self).__init__("https://www.summer-plus.net", username, password, proxy=True)
+    def __init__(self):
+        super(SouthPlusSign, self).__init__("https://www.summer-plus.net", app_name="南+", app_key="SPLUS")
+        # 支持的方法
+        self.exec_method = ["sign"]
 
     def fetch_index(self):
         url = f"{self.base_url}/login.php"
@@ -242,16 +241,5 @@ class SouthPlusSign(BaseSign):
 
 
 if __name__ == "__main__":
-    UP = os.getenv('SIGN_UP_SPLUS')
-    if UP:
-        user_info = UP.split("|")
-        username = user_info[0]
-        password = user_info[1]
-        s = SouthPlusSign(username, password)
-        login = s.login()
-        sign = False
-        if login:
-            sign = s.sign()
-        send(title="南+登录", content=f"日志：\n{s.log()}\n登录结果：{sign}")
-    else:
-        print("请设置账号")
+    s = SouthPlusSign()
+    s.run()

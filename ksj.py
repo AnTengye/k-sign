@@ -3,19 +3,18 @@
 cron: 0 0 8 * * *
 new Env('4ksj签到');
 """
-import os
-import time
 from urllib.parse import quote
 
 from scrapy import Selector
 
 from base import BaseSign
-from notify import send
 
 
 class KsjSign(BaseSign):
-    def __init__(self, username, password):
-        super(KsjSign, self).__init__("https://www.4ksj.com", username, password)
+    def __init__(self):
+        super(KsjSign, self).__init__("https://www.4ksj.com", app_name="4K视界", app_key="4k")
+        # 支持的方法
+        self.exec_method = ["sign"]
         # 签到配置
         self.index_path = 'qiandao/'
         self.sign_text_xpath = '//*[@id="wp"]/div[3]/div[1]/div[1]/div/div[1]/text()'
@@ -65,15 +64,5 @@ class KsjSign(BaseSign):
 
 
 if __name__ == "__main__":
-    UP = os.getenv('SIGN_UP_4K')
-    if UP:
-        user_info = UP.split("|")
-        username = user_info[0]
-        password = user_info[1]
-        s = KsjSign(username, password)
-        sign = False
-        if s.login():
-            sign = s.sign()
-        send(title="ksj签到", content=f"日志：\n{s.log()}\n签到结果：{sign}")
-    else:
-        print("请设置账号")
+    s = KsjSign()
+    s.run()

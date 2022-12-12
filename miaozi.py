@@ -31,8 +31,10 @@ class MiaoSign(BaseSign):
         "%E8%BF%99%E4%B8%9C%E8%A5%BF%E8%BE%A3%E7%9C%BC%E7%9D%9B%EF%BC%8C%E4%B8%8D%E8%BF%87%E8%BF%98%E6%98%AF%E4%B8%8B%E8%BD%BD%E7%9C%8B%E7%9C%8B%EF%BC%81%7B%3A7_295%3A%7D%7B%3A7_255%3A%7D"
     ]
 
-    def __init__(self, username, password):
-        super(MiaoSign, self).__init__("https://forum.h3dhub.com", username, password)
+    def __init__(self):
+        super(MiaoSign, self).__init__("https://forum.h3dhub.com", app_name="喵子小屋", app_key="MIAOZI")
+        # 支持的方法
+        self.exec_method = ["sign", "auto_reply"]
 
     def login(self, times=3) -> bool:
         if times == 0:
@@ -219,17 +221,5 @@ class MiaoSign(BaseSign):
 
 
 if __name__ == "__main__":
-    UP = os.getenv('SIGN_UP_MIAOZI')
-    if UP:
-        user_info = UP.split("|")
-        username = user_info[0]
-        password = user_info[1]
-        s = MiaoSign(username, password)
-        sign = False
-        reply = False
-        if s.login():
-            reply = s.auto_reply()
-            sign = s.sign()
-        send(title="喵子小屋签到", content=f"日志：{s.log()}\n签到结果：{sign}\n回复结果：{reply}")
-    else:
-        print("请设置账号")
+    s = MiaoSign()
+    s.run()

@@ -3,18 +3,18 @@
 cron: 0 0 8 * * *
 new Env('moxing签到');
 """
-import os
 from urllib.parse import quote
 
 from scrapy import Selector
 
 from base import BaseSign
-from notify import send
 
 
 class MoxingSign(BaseSign):
-    def __init__(self, url, username, password):
-        super(MoxingSign, self).__init__(url, username, password)
+    def __init__(self):
+        super(MoxingSign, self).__init__("", app_name="魔性论坛", app_key="MOXING")
+        # 支持的方法
+        self.exec_method = ["sign"]
         # 签到配置
         self.index_path = ''
         self.sign_path = "plugin.php?id=k_misign:sign&operation=qiandao&format=global_usernav_extra&formhash=%s&inajax=1&ajaxtarget=k_misign_topb"
@@ -67,16 +67,5 @@ class MoxingSign(BaseSign):
 
 
 if __name__ == "__main__":
-    url = os.getenv('SIGN_URL_MOXING')
-    UP = os.getenv('SIGN_UP_MOXING')
-    if UP:
-        user_info = UP.split("|")
-        username = user_info[0]
-        password = user_info[1]
-        s = MoxingSign(url, username, password)
-        sign = False
-        if s.login():
-            sign = s.sign()
-        send(title="moxing签到", content=f"日志：\n{s.log()}\n签到结果：{sign}")
-    else:
-        print("请设置账号")
+    s = MoxingSign()
+    s.run()

@@ -3,19 +3,18 @@
 cron: 0 0 8 * * *
 new Env('ACG次元小屋签到');
 """
-import os
-import time
 from urllib.parse import quote
 
 from scrapy import Selector
 
 from base import BaseSign
-from notify import send
 
 
 class YuanACGSign(BaseSign):
-    def __init__(self, username, password):
-        super(YuanACGSign, self).__init__("https://note.yuanacg.com", username, password)
+    def __init__(self):
+        super(YuanACGSign, self).__init__("https://note.yuanacg.com", app_name="ACG次元小屋", app_key="YACG")
+        # 支持的方法
+        self.exec_method = ["sign"]
 
     def login(self) -> bool:
         print(f"进行 {self.username} 登录")
@@ -75,15 +74,5 @@ class YuanACGSign(BaseSign):
 
 
 if __name__ == "__main__":
-    UP = os.getenv('SIGN_UP_YACG')
-    if UP:
-        user_info = UP.split("|")
-        username = user_info[0]
-        password = user_info[1]
-        s = YuanACGSign(username, password)
-        sign = False
-        if s.login():
-            sign = s.sign()
-        send(title="YuanACG签到", content=f"日志：\n{s.log()}\n签到结果：{sign}")
-    else:
-        print("请设置账号")
+    s = YuanACGSign()
+    s.run()
