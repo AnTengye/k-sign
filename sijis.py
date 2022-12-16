@@ -19,7 +19,7 @@ class SiJiSSign(BaseSign):
         self.index_path = 'k_misign-sign.html'
         self.form_hash_xpath = '//*[@id="scbar_form"]/input[2]/@value'
         self.sign_path = "plugin.php?id=k_misign:sign&operation=qiandao&format=empty&formhash=%s"
-        self.sign_text_xpath = '//*[@id="wp"]/div[2]/div[1]/div[1]/div/div[1]/text()'
+        self.sign_text_xpath = '//*[@id="wp"]//div[contains(text(),"签到")]/text()'
         self.sign_text = '您今天还没有签到'
 
     def login(self) -> bool:

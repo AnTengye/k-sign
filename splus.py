@@ -15,7 +15,7 @@ from gifcode import handle_yzm
 
 class SouthPlusSign(BaseSign):
     def __init__(self):
-        super(SouthPlusSign, self).__init__("https://www.summer-plus.net", app_name="南+", app_key="SPLUS")
+        super(SouthPlusSign, self).__init__("https://www.summer-plus.net", app_name="南+", app_key="SPLUS", proxy=True)
         # 支持的方法
         self.exec_method = ["sign"]
 
