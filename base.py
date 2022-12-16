@@ -303,6 +303,7 @@ class BaseSign:
         return ''.join(secrets.choice(alphabet) for _ in range(length))
 
     def run(self):
+        content = ""
         try:
             login = self.login()
             result = {"登录": login}
@@ -310,16 +311,17 @@ class BaseSign:
                 for v in self.exec_method:
                     func = getattr(self, v)
                     result[v] = func()
-            content = ""
             for k, r in result.items():
                 content += f"{k} 结果：{r}\n"
             content += f"日志：\n{self.log()}"
-            send(title=self.app_name, content=content)
         except requests.exceptions.RequestException as e:
             traceback.print_exc()
-            send(title=self.app_name, content="网络请求有误，请检查代理设置")
+            content += "网络请求有误，请检查代理设置"
         except Exception as e:
             traceback.print_exc()
+            content += "执行异常，请查看日志排查"
+        finally:
+            send(title=self.app_name, content=content)
 
 
 class TimeoutHTTPAdapter(HTTPAdapter):
