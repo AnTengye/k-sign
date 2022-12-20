@@ -13,7 +13,7 @@ from gifcode import handle_yzm
 
 class HaoSign(BaseSign):
     def __init__(self):
-        super(HaoSign, self).__init__("https://www.hao4k.cn", app_name="hao4k", app_key="4K")
+        super(HaoSign, self).__init__("https://www.hao4k.cn", app_name="hao4k", app_key="4K", timeout=10)
         # 支持的方法
         self.exec_method = ["sign"]
         # 签到配置

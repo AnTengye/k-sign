@@ -160,7 +160,7 @@ class BaseSign:
         'msg_yanzheng_empty': '请输入验证问答答案',
     }
 
-    def __init__(self, base_url, app_name, app_key, proxy=False):
+    def __init__(self, base_url, app_name, app_key, proxy=False, timeout=5):
         if base_url == "":
             base_url = os.getenv(f'SIGN_URL_{app_key}')
             if base_url == "":
@@ -177,7 +177,7 @@ class BaseSign:
         self.app_name = app_name
         self.content = list()
         session = requests.session()
-        adapter = TimeoutHTTPAdapter(timeout=5)
+        adapter = TimeoutHTTPAdapter(timeout=timeout)
         session.mount("https://", adapter)
         session.mount("http://", adapter)
         self.session = session
