@@ -162,7 +162,7 @@ def dingding_bot(title: str, content: str) -> None:
     if not response["errcode"]:
         print("钉钉机器人 推送成功！")
     else:
-        print("钉钉机器人 推送失败！")
+        print("钉钉机器人 推送失败！", response)
 
 
 def feishu_bot(title: str, content: str) -> None:
