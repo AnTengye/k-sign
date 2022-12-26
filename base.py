@@ -180,6 +180,7 @@ class BaseSign:
         adapter = TimeoutHTTPAdapter(timeout=timeout)
         session.mount("https://", adapter)
         session.mount("http://", adapter)
+        session.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"})
         self.session = session
         if proxy:
             proxy = os.getenv('SIGN_UP_PROXY')

@@ -5,14 +5,14 @@ new Env('moxing签到');
 """
 from urllib.parse import quote
 
+import requests
 from scrapy import Selector
 
 from base import BaseSign
 
-
 class MoxingSign(BaseSign):
     def __init__(self):
-        super(MoxingSign, self).__init__("", app_name="魔性论坛", app_key="MOXING")
+        super(MoxingSign, self).__init__("", app_name="魔性论坛", app_key="MOXING", proxy=True)
         # 支持的方法
         self.exec_method = ["sign"]
         # 签到配置
@@ -26,7 +26,7 @@ class MoxingSign(BaseSign):
         print(f"进行 {self.username} 登录")
         response = self.session.get(f"{self.base_url}/member.php?mod=logging&action=login")
         selector = Selector(response=response)
-        form_hash = selector.xpath('//*[@id="scbar_form"]/input[2]/@value').extract_first()
+        form_hash = selector.xpath('//input[@name="formhash"]/@value').extract_first()
         url = f"{self.base_url}/member.php?mod=logging&action=login&loginsubmit=yes&loginhash=LocOL&inajax=1"
         payload = f'formhash={form_hash}&referer={quote(self.base_url, safe="")}%2Fportal.php&username={self.username}&password={self.password}&questionid=0&answer=&cookietime=2592000'
         headers = {
