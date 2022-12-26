@@ -5,14 +5,13 @@ new Env('moxing签到');
 """
 from urllib.parse import quote
 
-import requests
 from scrapy import Selector
 
 from base import BaseSign
 
 class MoxingSign(BaseSign):
     def __init__(self):
-        super(MoxingSign, self).__init__("", app_name="魔性论坛", app_key="MOXING", proxy=True)
+        super(MoxingSign, self).__init__("", app_name="moxing", app_key="MOXING", proxy=True)
         # 支持的方法
         self.exec_method = ["sign"]
         # 签到配置
