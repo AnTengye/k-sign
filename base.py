@@ -160,7 +160,7 @@ class BaseSign:
         'msg_yanzheng_empty': '请输入验证问答答案',
     }
 
-    def __init__(self, base_url, app_name, app_key, proxy=False, timeout=5):
+    def __init__(self, base_url, app_name, app_key, proxy=False, timeout=10):
         if base_url == "":
             base_url = os.getenv(f'SIGN_URL_{app_key}')
             if base_url == "":

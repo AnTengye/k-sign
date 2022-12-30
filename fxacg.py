@@ -25,7 +25,7 @@ class FXAcgSign(BaseSign):
         self.sign_text = '签到'
         self.sign_method = 'post'
 
-    def login(self, times=1) -> bool:
+    def login(self, times=3) -> bool:
         if times == 0:
             print("失败次数过多")
             return False
