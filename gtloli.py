@@ -31,20 +31,26 @@ class GTloliSign(BaseSign):
         print(f"进行 {self.username} 登录-times:{times}")
         response = self.session.get(f"{self.base_url}/member.php?mod=logging&action=login")
         selector = Selector(response=response)
-        form_hash = selector.xpath('//*[@id="login-form"]/form/input[1]/@value').extract_first("")
+        form_hash = selector.xpath('//input[@name="formhash"]/@value').extract_first("")
+        login_hash_text = selector.xpath('//form[contains(@id,"loginform_")]/@id').extract_first("")
+        login_hash = ""
+        if login_hash_text is not None:
+            login_hash = login_hash_text[len("loginform_"):]
         sec_data = selector.re(r"updateseccode\('(\w*?)'")
-        update_data = selector.re(r"update=([0-9]*)&")
-        update = ""
         sec_hash = ""
         if len(sec_data) != 0:
             sec_hash = sec_data[0]
+        update_js = self.session.get(f"{self.base_url}/misc.php?mod=seccode&action=update&idhash={sec_hash}&0.7553133187559993&modid=member::logging")
+        update_js_selector = Selector(response=update_js)
+        update_data = update_js_selector.re(r"update=([0-9]*)&")
+        update = ""
         if len(update_data) != 0:
             update = update_data[0]
         if sec_hash and form_hash:
             verify_code = self.code(sec_hash, update, 5)
             if not verify_code:
                 return self.login(times - 1)
-            url = f"{self.base_url}/member.php?mod=logging&action=login&loginsubmit=yes&loginhash=LXMiL&inajax=1"
+            url = f"{self.base_url}/member.php?mod=logging&action=login&loginsubmit=yes&loginhash={login_hash}&inajax=1"
             payload = f'formhash={form_hash}&referer={quote(self.base_url, safe="")}%2Fforum.php&loginfield=username&username={self.username}&password={self.password}&seccodehash={sec_hash}&seccodemodid=member%3A%3Alogging&seccodeverify={verify_code}&questionid=0&answer=&cookietime=2592000'
             headers = {
                 'authority': self.url_info.hostname,
