@@ -2,18 +2,20 @@ import os
 import secrets
 import string
 import traceback
+import ssl
 from urllib.parse import urlparse, ParseResult, quote
 
 import requests
 from scrapy import Selector
 import requests.packages.urllib3
 from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.retry import Retry
 
 from notify import send
 
 requests.packages.urllib3.disable_warnings()
 
-DEFAULT_TIMEOUT = 5  # seconds
+DEFAULT_TIMEOUT = 10  # seconds
 
 
 class BaseSign:
@@ -177,10 +179,12 @@ class BaseSign:
         self.app_name = app_name
         self.content = list()
         session = requests.session()
-        adapter = TimeoutHTTPAdapter(timeout=timeout)
+        retries = Retry(total=3, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504])
+        adapter = TimeoutHTTPAdapter(max_retries=retries)
         session.mount("https://", adapter)
         session.mount("http://", adapter)
-        session.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"})
+        session.headers.update({
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"})
         self.session = session
         if proxy:
             proxy = os.getenv('SIGN_UP_PROXY')
@@ -315,6 +319,9 @@ class BaseSign:
             for k, r in result.items():
                 content += f"{k} 结果：{r}\n"
             content += f"日志：\n{self.log()}"
+        except requests.exceptions.RetryError as e:
+            traceback.print_exc()
+            content += e.args[0].reason.args[0]
         except requests.exceptions.RequestException as e:
             traceback.print_exc()
             content += "网络请求有误，请检查代理设置"
@@ -327,11 +334,101 @@ class BaseSign:
 
 class TimeoutHTTPAdapter(HTTPAdapter):
     def __init__(self, *args, **kwargs):
+        print("已启用", self.__class__.__name__, "插件")
         self.timeout = DEFAULT_TIMEOUT
         if "timeout" in kwargs:
             self.timeout = kwargs["timeout"]
             del kwargs["timeout"]
         super().__init__(*args, **kwargs)
+
+    def send(self, request, **kwargs):
+        timeout = kwargs.get("timeout")
+        if timeout is None:
+            kwargs["timeout"] = self.timeout
+        return super().send(request, **kwargs)
+
+
+class CipherSuiteAdapter(HTTPAdapter):
+    """
+    支持绕过cf认证
+    """
+    __attrs__ = [
+        'ssl_context',
+        'max_retries',
+        'config',
+        '_pool_connections',
+        '_pool_maxsize',
+        '_pool_block',
+        'source_address'
+    ]
+
+    def __init__(self, *args, **kwargs):
+        print("已启用", self.__class__.__name__, "插件")
+        ciphers = ":".join(
+            [
+                "DH+AES",
+                "RSA+AES",
+            ]
+        )
+        self.timeout = DEFAULT_TIMEOUT
+        if "timeout" in kwargs:
+            self.timeout = kwargs["timeout"]
+            del kwargs["timeout"]
+        self.ssl_context = kwargs.pop('ssl_context', None)
+        self.cipherSuite = kwargs.pop('cipherSuite', ciphers)
+        self.source_address = kwargs.pop('source_address', None)
+        self.server_hostname = kwargs.pop('server_hostname', None)
+        self.ecdhCurve = kwargs.pop('ecdhCurve', 'prime256v1')
+
+        if self.source_address:
+            if isinstance(self.source_address, str):
+                self.source_address = (self.source_address, 0)
+
+            if not isinstance(self.source_address, tuple):
+                raise TypeError(
+                    "source_address must be IP address string or (ip, port) tuple"
+                )
+
+        if not self.ssl_context:
+            self.ssl_context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
+
+            self.ssl_context.orig_wrap_socket = self.ssl_context.wrap_socket
+            self.ssl_context.wrap_socket = self.wrap_socket
+
+            if self.server_hostname:
+                self.ssl_context.server_hostname = self.server_hostname
+            self.ssl_context.check_hostname = False
+
+            self.ssl_context.set_ciphers(self.cipherSuite)
+            self.ssl_context.set_ecdh_curve(self.ecdhCurve)
+            self.ssl_context.options |= (ssl.OP_NO_SSLv2 | ssl.OP_NO_SSLv3 | ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1)
+
+        super(CipherSuiteAdapter, self).__init__(**kwargs)
+
+    # ------------------------------------------------------------------------------- #
+
+    def wrap_socket(self, *args, **kwargs):
+        if hasattr(self.ssl_context, 'server_hostname') and self.ssl_context.server_hostname:
+            kwargs['server_hostname'] = self.ssl_context.server_hostname
+            self.ssl_context.check_hostname = False
+        else:
+            self.ssl_context.check_hostname = True
+
+        return self.ssl_context.orig_wrap_socket(*args, **kwargs)
+
+    # ------------------------------------------------------------------------------- #
+
+    def init_poolmanager(self, *args, **kwargs):
+        kwargs['ssl_context'] = self.ssl_context
+        kwargs['source_address'] = self.source_address
+        return super(CipherSuiteAdapter, self).init_poolmanager(*args, **kwargs)
+
+    # ------------------------------------------------------------------------------- #
+
+    def proxy_manager_for(self, *args, **kwargs):
+        kwargs['ssl_context'] = self.ssl_context
+        kwargs['source_address'] = self.source_address
+        return super(CipherSuiteAdapter, self).proxy_manager_for(*args, **kwargs)
 
     def send(self, request, **kwargs):
         timeout = kwargs.get("timeout")

@@ -8,13 +8,16 @@ from urllib.parse import quote
 from scrapy import Selector
 
 from gifcode import handle_yzm
-from base import BaseSign
+from base import BaseSign, CipherSuiteAdapter
 
 
 class GTloliSign(BaseSign):
     def __init__(self):
-        super(GTloliSign, self).__init__("https://www.gtloli.gay", app_name="哥特萝莉", app_key="GTLL",
+        base_url = "https://www.gtloli.gay"
+        super(GTloliSign, self).__init__(base_url, app_name="哥特萝莉", app_key="GTLL",
                                          proxy=True)
+        adapter = CipherSuiteAdapter()
+        self.session.mount(base_url, adapter)
         # 支持的方法
         self.exec_method = ["sign"]
         # 签到配置
