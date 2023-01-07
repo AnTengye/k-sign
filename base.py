@@ -1,4 +1,5 @@
 import os
+import random
 import secrets
 import string
 import traceback
@@ -10,6 +11,7 @@ from scrapy import Selector
 import requests.packages.urllib3
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
+from requests.packages.urllib3.util.ssl_ import create_urllib3_context
 
 from notify import send
 
@@ -180,7 +182,7 @@ class BaseSign:
         self.content = list()
         session = requests.session()
         retries = Retry(total=3, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504])
-        adapter = TimeoutHTTPAdapter(max_retries=retries)
+        adapter = TimeoutHTTPAdapter(timeout=timeout, max_retries=retries)
         session.mount("https://", adapter)
         session.mount("http://", adapter)
         session.headers.update({
@@ -361,12 +363,38 @@ class CipherSuiteAdapter(HTTPAdapter):
         '_pool_block',
         'source_address'
     ]
+    DEFAULT_CIPHERS = ":".join(
+        [
+            "ECDHE+AESGCM",
+            "ECDHE+CHACHA20",
+            "DHE+AESGCM",
+            "DHE+CHACHA20",
+            "ECDH+AESGCM",
+            "DH+AESGCM",
+            "ECDH+AES",
+            "DH+AES",
+            "RSA+AESGCM",
+            "RSA+AES",
+            "!aNULL",
+            "!eNULL",
+            "!MD5",
+            "!DSS",
+        ]
+    )
 
     def __init__(self, *args, **kwargs):
         print("已启用", self.__class__.__name__, "插件")
         ciphers = ":".join(
             [
+                "ECDHE+AESGCM",
+                "ECDHE+CHACHA20",
+                "DHE+AESGCM",
+                "DHE+CHACHA20",
+                "ECDH+AESGCM",
+                "DH+AESGCM",
+                "ECDH+AES",
                 "DH+AES",
+                "RSA+AESGCM",
                 "RSA+AES",
             ]
         )
@@ -397,7 +425,7 @@ class CipherSuiteAdapter(HTTPAdapter):
 
             if self.server_hostname:
                 self.ssl_context.server_hostname = self.server_hostname
-            self.ssl_context.check_hostname = False
+                self.ssl_context.check_hostname = False
 
             self.ssl_context.set_ciphers(self.cipherSuite)
             self.ssl_context.set_ecdh_curve(self.ecdhCurve)
@@ -413,7 +441,6 @@ class CipherSuiteAdapter(HTTPAdapter):
             self.ssl_context.check_hostname = False
         else:
             self.ssl_context.check_hostname = True
-
         return self.ssl_context.orig_wrap_socket(*args, **kwargs)
 
     # ------------------------------------------------------------------------------- #
@@ -435,3 +462,32 @@ class CipherSuiteAdapter(HTTPAdapter):
         if timeout is None:
             kwargs["timeout"] = self.timeout
         return super().send(request, **kwargs)
+ORIGIN_CIPHERS = (
+    'ECDH+AESGCM:DH+AESGCM:ECDH+AES256:ECDH+AES128:DH+AES256:DH+AES:ECDH+HIGH:DH+HIGH:ECDH+3DES:DH+3DES:RSA+AESGCM'
+    ':RSA+AES:RSA+HIGH:RSA+3DES')
+
+
+class DESAdapter(HTTPAdapter):
+    def __init__(self, *args, **kwargs):
+        # 在请求中重新启用 3DES 支持的 TransportAdapter
+        CIPHERS = ORIGIN_CIPHERS.split(":")
+        random.shuffle(CIPHERS)
+        # print("1:", CIPHERS)
+        CIPHERS = ":".join(CIPHERS)
+        # print("2:", CIPHERS)
+        self.COPHERS = CIPHERS + ":!aNULL:!eNULL:!MD5"
+        super(DESAdapter, self).__init__(*args, **kwargs)
+
+    # 在一般情况下，当我们实现一个子类的时候，__init__的第一行应该是super().__init__(*args, **kwargs)，
+    # 但是由于init_poolmanager和proxy_manager_for是复写了父类的两个方法，
+    # 这两个方法是在执行super().__init__(*args, **kwargs)的时候就执行的。
+    # 所以，我们随机设置 Cipher Suits 的时候，需要放在super().__init__(*args, **kwargs)的前面。
+    def init_poolmanager(self, *args, **kwargs):
+        context = create_urllib3_context(ciphers=self.COPHERS)
+        kwargs["ssl_context"] = context
+        return super(DESAdapter, self).init_poolmanager(*args, **kwargs)
+
+    def proxy_manager_for(self, *args, **kwargs):
+        context = create_urllib3_context(ciphers=self.COPHERS)
+        kwargs["ssl_context"] = context
+        return super(DESAdapter, self).proxy_manager_for(*args, **kwargs)
