@@ -13,6 +13,7 @@ from base import BaseSign
 class SiJiSSign(BaseSign):
     def __init__(self):
         super(SiJiSSign, self).__init__("https://sijishea.com", app_name="司机社", app_key="SJS")
+        self.login_retry = 3
         # 支持的方法
         self.exec_method = ["sign"]
         # 签到配置
@@ -23,6 +24,8 @@ class SiJiSSign(BaseSign):
         self.sign_text = '您今天还没有签到'
 
     def login(self) -> bool:
+        if self.login_retry <= 0:
+            return False
         print(f"进行 {self.username} 登录")
         response = self.session.get(f"{self.base_url}/member.php?mod=logging&action=login")
         selector = Selector(response=response)
@@ -47,8 +50,6 @@ class SiJiSSign(BaseSign):
             'sec-fetch-site': 'same-origin',
             'sec-fetch-user': '?1',
             'upgrade-insecure-requests': '1',
-            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) '
-                          'Chrome/102.0.0.0 Safari/537.36 '
         }
         response = self.session.post(url, headers=headers, data=payload)
         result_selector = Selector(response=response)
@@ -57,11 +58,11 @@ class SiJiSSign(BaseSign):
             result = result_selector.re(r'errorhandle_\((.*?),')
             if len(result) == 0:
                 self.pwl(f'登录失败:{response.text}')
-                return False
-            self.pwl(result[0])
-            return False
-        else:
-            self.sign_url = jump_src[0]
+            else:
+                self.pwl(result[0])
+            self.login_retry -= 1
+            return self.login()
+        self.sign_url = jump_src[0]
         self.pwl('登录成功')
         return True
 
