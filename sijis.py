@@ -7,12 +7,12 @@ from urllib.parse import quote
 
 from scrapy import Selector
 
-from base import BaseSign
+from base import BaseSign, CipherSuiteAdapter
 
 
 class SiJiSSign(BaseSign):
     def __init__(self):
-        super(SiJiSSign, self).__init__("https://sijishea.com", app_name="司机社", app_key="SJS")
+        super(SiJiSSign, self).__init__("https://sijishea.com", app_name="司机社", app_key="SJS", proxy=True)
         self.login_retry = 3
         # 支持的方法
         self.exec_method = ["sign"]
@@ -27,10 +27,15 @@ class SiJiSSign(BaseSign):
         if self.login_retry <= 0:
             return False
         print(f"进行 {self.username} 登录")
-        response = self.session.get(f"{self.base_url}/member.php?mod=logging&action=login")
+        response = self.session.get(f"{self.base_url}")
         selector = Selector(response=response)
         form_hash = selector.xpath('//*[@id="scbar_form"]/input[2]/@value').extract_first()
-        url = f"{self.base_url}/member.php?mod=logging&action=login&loginsubmit=yes&loginhash=LocOL&inajax=1"
+        if form_hash is None:
+            print("页面", response.text)
+            self.pwl("页面变更")
+            self.login_retry -= 1
+            return self.login()
+        url = f"{self.base_url}/member.php?mod=logging&action=login&loginsubmit=yes&handlekey=login&loginhash=LocOL&inajax=1"
         payload = f'formhash={form_hash}&referer={quote(self.base_url, safe="")}%2Fportal.php&username={self.username}&password={self.password}&questionid=0&answer=&cookietime=2592000'
         headers = {
             'authority': self.url_info.hostname,
