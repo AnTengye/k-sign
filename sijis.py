@@ -58,9 +58,9 @@ class SiJiSSign(BaseSign):
         }
         response = self.session.post(url, headers=headers, data=payload)
         result_selector = Selector(response=response)
-        jump_src = result_selector.re(r"succeedhandle_\('(.*?)'")
+        jump_src = result_selector.re(r"succeedhandle_login\('(.*?)'")
         if len(jump_src) == 0:
-            result = result_selector.re(r'errorhandle_\((.*?),')
+            result = result_selector.re(r'errorhandle_login\((.*?),')
             if len(result) == 0:
                 self.pwl(f'登录失败:{response.text}')
             else:
