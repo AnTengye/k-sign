@@ -12,12 +12,12 @@ from base import BaseSign
 
 class KsjSign(BaseSign):
     def __init__(self):
-        super(KsjSign, self).__init__("https://www.4ksj.com", app_name="4K视界", app_key="4k")
+        super(KsjSign, self).__init__("https://www.4ksj.com", app_name="4K视界", app_key="4K")
         # 支持的方法
         self.exec_method = ["sign"]
         # 签到配置
         self.index_path = 'qiandao/'
-        self.sign_text_xpath = '//*[@id="wp"]/div[3]/div[1]/div[1]/div/div[1]/text()'
+        self.sign_text_xpath = '//*[@class="paiming cl"]/div[1]/text()'
         self.sign_text = '您今天还没有签到'
         self.sign_path = "qiandao/?mod=sign&operation=qiandao&formhash=%s&format=empty"
         self.form_hash_xpath = '//*[@id="scbar_form"]/input[2]/@value'
