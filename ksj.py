@@ -52,7 +52,7 @@ class KsjSign(BaseSign):
         }
         response = self.session.post(url, headers=headers, data=payload)
         result_selector = Selector(response=response)
-        jump_src = result_selector.re(r'src="(.*?)"')
+        jump_src = result_selector.re(r'succeedhandle_\(\'(.*?)\',')
         if len(jump_src) == 0:
             result = result_selector.re(r'errorhandle_\((.*?),')
             print(result[0])

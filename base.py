@@ -7,6 +7,7 @@ import ssl
 from urllib.parse import urlparse, ParseResult, quote
 
 import requests
+import urllib3
 from scrapy import Selector
 import requests.packages.urllib3
 from requests.adapters import HTTPAdapter
@@ -325,6 +326,9 @@ class BaseSign:
             traceback.print_exc()
             content += e.args[0].reason.args[0]
         except requests.exceptions.ConnectionError as e:
+            traceback.print_exc()
+            content += e.args[0].reason.args[0]
+        except urllib3.exceptions.ReadTimeoutError as e:
             traceback.print_exc()
             content += e.args[0].reason.args[0]
         except requests.exceptions.RequestException as e:
