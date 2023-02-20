@@ -15,6 +15,7 @@ class GTloliSign(BaseSign):
     def __init__(self):
         super(GTloliSign, self).__init__("https://www.gtloli.gay", app_name="哥特萝莉", app_key="GTLL",
                                          proxy=True)
+        self.retry_times = 2
         self.session.headers.update({
             "User-Agent": "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Mobile Safari/537.36"})
         adapter = CipherSuiteAdapter(server_hostname=self.url_info.hostname)
@@ -28,11 +29,7 @@ class GTloliSign(BaseSign):
         self.sign_text_xpath = '//*[@id="JD_sign"]/div/text()'
         self.sign_text = '签到'
 
-    def login(self, times=2) -> bool:
-        if times == 0:
-            print("失败次数过多")
-            return False
-        print(f"进行 {self.username} 登录-times:{times}")
+    def login(self) -> bool:
         response = self.session.get(f"{self.base_url}/member.php?mod=logging&action=login&referer=https%3A%2F%2F{self.url_info.hostname}%2Fhome.php%3Fmod%3Dspace%26uid%3D344248%26do%3Dprofile%26mycenter%3D1%26navactivate%3Dwd%26mobile%3D2")
         selector = Selector(response=response)
         form_hash = selector.xpath('//input[@name="formhash"]/@value').extract_first("")
@@ -48,7 +45,7 @@ class GTloliSign(BaseSign):
         if sec_hash and form_hash:
             verify_code = self.code(sec_hash, update, 5)
             if not verify_code:
-                return self.login(times - 1)
+                return False
             url = f"{self.base_url}/member.php?mod=logging&action=login&loginsubmit=yes&loginhash={login_hash}&inajax=1&mobile=2"
             payload = f'formhash={form_hash}&referer={quote(self.base_url, safe="")}%2Fhome.php%3Fmod%3Dspace%26uid%3D344248%26do%3Dprofile%26mycenter%3D1%26navactivate%3Dwd%26mobile%3D2&fastloginfield=username&cookietime=2592000&username={self.username}&password={self.password}&questionid=0&answer=&seccodehash={sec_hash}&seccodeverify={verify_code}'
             headers = {
@@ -72,7 +69,7 @@ class GTloliSign(BaseSign):
             jump_src = result_selector.re(r"window.location.href='(.*?)'")
             if len(jump_src) == 0:
                 print(response.text)
-                return self.login(times - 1)
+                return False
             else:
                 self.session.get(jump_src[0])
                 self.pwl(f'登录成功')

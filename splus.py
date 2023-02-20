@@ -18,6 +18,7 @@ class SouthPlusSign(BaseSign):
         super(SouthPlusSign, self).__init__("https://www.summer-plus.net", app_name="南+", app_key="SPLUS", proxy=True)
         # 支持的方法
         self.exec_method = ["sign"]
+        self.retry_times = 10
 
     def fetch_index(self):
         url = f"{self.base_url}/login.php"
@@ -42,17 +43,13 @@ class SouthPlusSign(BaseSign):
         }
         self.session.get(url, headers=headers, data=payload)
 
-    def login(self, times=10) -> bool:
-        if times == 0:
-            self.pwl("失败次数过多")
-            return False
-        print(f"进行 {self.username} 登录-times:{times}")
+    def login(self) -> bool:
         # 访问页面
         self.fetch_index()
         self.fetch_code()
         verify_code = self.code(20)
         if not verify_code:
-            return self.login(times - 1)
+            return False
         url = f"{self.base_url}/login.php?"
 
         payload = f'forward=&jumpurl={quote(self.base_url, safe="")}%2F&step=2&gdcode={verify_code}&lgt=0&pwuser={self.username}&pwpwd={quote(self.password)}&hideid=0&cktime=31536000'
@@ -79,13 +76,13 @@ class SouthPlusSign(BaseSign):
         resp_selector = Selector(response=response)
         result = resp_selector.re(r"认证码不正确")
         if result is not None and len(result) > 0:
-            return self.login(times - 1)
+            return False
         success_result = resp_selector.re(r"您已经顺利登录")
         if success_result is not None and len(success_result) > 0:
             self.pwl("您已经顺利登录")
             return True
         print(response.text)
-        return self.login(times - 1)
+        return False
 
     def fetch_code(self):
         url = f"{self.base_url}/ck.php?"

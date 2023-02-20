@@ -33,14 +33,11 @@ class MiaoSign(BaseSign):
 
     def __init__(self):
         super(MiaoSign, self).__init__("https://forum.h3dhub.com", app_name="喵子小屋", app_key="MIAOZI")
+        self.retry_times = 3
         # 支持的方法
         self.exec_method = ["sign", "auto_reply"]
 
-    def login(self, times=3) -> bool:
-        if times == 0:
-            print("失败次数过多")
-            return False
-        print(f"进行 {self.username} 登录-times:{times}")
+    def login(self) -> bool:
         response = self.session.get(f"{self.base_url}/member.php?mod=logging&action=login")
         selector = Selector(response=response)
         form_hash = selector.xpath('//*[@id="scbar_form"]/input[2]/@value').extract_first("")
@@ -79,7 +76,7 @@ class MiaoSign(BaseSign):
             if len(jump_src) == 0:
                 result = result_selector.re(r"errorhandle_\('(.*?)'")
                 print(result[0])
-                return self.login(times - 1)
+                return False
             else:
                 self.session.get(jump_src[0])
                 print(f'登录成功')

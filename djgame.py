@@ -24,11 +24,7 @@ class DJGameSign(BaseSign):
         # 支持的方法
         self.exec_method = ["sign"]
 
-    def login(self, times=3) -> bool:
-        if times == 0:
-            print("失败次数过多")
-            return False
-        print(f"进行 {self.username} 登录-times:{times}")
+    def login(self) -> bool:
         response = self.session.get(f"{self.base_url}/member.php?mod=logging&action=login")
         selector = Selector(response=response)
         form_hash = selector.xpath('//*[@id="scbar_form"]/input[2]/@value').extract_first("")
@@ -39,7 +35,7 @@ class DJGameSign(BaseSign):
         if sec_hash and form_hash:
             verify_code = self.code(sec_hash, 5)
             if not verify_code:
-                return self.login(times - 1)
+                return False
             url = f"{self.base_url}/member.php?mod=logging&action=login&loginsubmit=yes&loginhash=LzZ1M&inajax=1"
             payload = f'formhash={form_hash}&referer={quote(self.base_url, safe="")}%2F.%2F&loginfield=username&username={self.username}&password={self.password}&questionid=0&answer=&sechash={sec_hash}&seccodeverify={verify_code}&cookietime=2592000'
             headers = {
@@ -65,8 +61,9 @@ class DJGameSign(BaseSign):
             jump_src = result_selector.re(r"succeedhandle_\('(.*?)'")
             if len(jump_src) == 0:
                 result = result_selector.re(r'errorhandle_\((.*?),')
-                print(result[0])
-                return self.login(times - 1)
+                if len(result) > 0:
+                    print(result[0])
+                return False
             else:
                 self.session.get(jump_src[0])
                 print(f'登录成功')

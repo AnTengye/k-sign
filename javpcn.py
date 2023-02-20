@@ -18,6 +18,7 @@ from notify import send
 class JavPlayerSign(BaseSign):
     def __init__(self):
         super(JavPlayerSign, self).__init__("http://javpcn.com", app_name="JavPlater", app_key="JAVPCN")
+        self.retry_times = 3
         # 支持的方法
         self.exec_method = []
         # 签到配置
@@ -27,11 +28,7 @@ class JavPlayerSign(BaseSign):
         self.sign_path = "qiandao/?mod=sign&operation=qiandao&formhash=%s&format=empty"
         self.form_hash_xpath = '//*[@id="scbar_form"]/input[2]/@value'
 
-    def login(self, times=3) -> bool:
-        if times == 0:
-            self.pwl("失败次数过多")
-            return False
-        print(f"进行 {self.username} 登录-times:{times}")
+    def login(self) -> bool:
         response = self.session.get(f"{self.base_url}/member.php?mod=logging&action=login")
         selector = Selector(response=response)
         form_hash = selector.xpath('//input[@name="formhash"]/@value').extract_first("")
@@ -46,7 +43,7 @@ class JavPlayerSign(BaseSign):
         if sec_hash and form_hash:
             verify_code = self.code(sec_hash, update, 5)
             if not verify_code:
-                return self.login(times - 1)
+                return False
             url = f"{self.base_url}/member.php?mod=logging&action=login&loginsubmit=yes&loginhash=LXMiL&inajax=1"
             payload = f'formhash={form_hash}&referer={quote(self.base_url, safe="")}%2Fforum.php&loginfield=username&username={self.username}&password={self.password}&seccodehash={sec_hash}&seccodemodid=member%3A%3Alogging&seccodeverify={verify_code}&questionid=0&answer=&cookietime=2592000'
             headers = {
@@ -72,7 +69,7 @@ class JavPlayerSign(BaseSign):
             if len(jump_src) == 0:
                 result = result_selector.re(r'errorhandle_\((.*?),')
                 print(result[0])
-                return self.login(times - 1)
+                return False
             else:
                 self.session.get(jump_src[0])
                 self.pwl(f'登录成功')

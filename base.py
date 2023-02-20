@@ -1,18 +1,17 @@
 import os
 import random
 import secrets
+import ssl
 import string
 import traceback
-import ssl
 from urllib.parse import urlparse, ParseResult, quote
 
 import requests
-import urllib3
-from scrapy import Selector
 import requests.packages.urllib3
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
 from requests.packages.urllib3.util.ssl_ import create_urllib3_context
+from scrapy import Selector
 
 from notify import send
 
@@ -28,6 +27,7 @@ class BaseSign:
     url_info: ParseResult
     content: list
     exec_method: list
+    retry_times: 1
     # 用户信息配置
     username: str
     password: str
@@ -311,37 +311,41 @@ class BaseSign:
         return ''.join(secrets.choice(alphabet) for _ in range(length))
 
     def run(self):
-        content = ""
+        content = self._exec("")
+        send(title=self.app_name, content=content)
+
+    def _exec(self, content) -> str:
+        self.retry_times -= 1
         try:
             login = self.login()
             result = {"登录": login}
-            if login and len(self.exec_method) != 0:
-                for v in self.exec_method:
-                    func = getattr(self, v)
-                    result[v] = func()
+            if login:
+                if len(self.exec_method) != 0:
+                    for v in self.exec_method:
+                        func = getattr(self, v)
+                        result[v] = func()
+            elif self.retry_times > 0:
+                return self._exec(content)
             for k, r in result.items():
                 content += f"{k} 结果：{r}\n"
             content += f"日志：\n{self.log()}"
-        except requests.exceptions.RetryError as e:
+        except (
+                requests.exceptions.RetryError,
+                requests.exceptions.ConnectionError,
+                requests.exceptions.ReadTimeout
+        ) as e:
+            # 当网络不好时，进行重试
             traceback.print_exc()
             content += e.args[0].reason.args[0]
-        except requests.exceptions.ConnectionError as e:
-            traceback.print_exc()
-            content += e.args[0].reason.args[0]
-        except urllib3.exceptions.ReadTimeoutError as e:
-            traceback.print_exc()
-            content += e.args[0].reason.args[0]
-        except requests.exceptions.ReadTimeout as e:
-            traceback.print_exc()
-            content += e.args[0].reason.args[0]
+            if self.retry_times > 0:
+                return self._exec(content)
         except requests.exceptions.RequestException as e:
             traceback.print_exc()
             content += "网络请求有误，请检查代理设置"
         except Exception as e:
             traceback.print_exc()
             content += "执行异常，请查看日志排查"
-        finally:
-            send(title=self.app_name, content=content)
+        return content
 
 
 class TimeoutHTTPAdapter(HTTPAdapter):
@@ -472,6 +476,8 @@ class CipherSuiteAdapter(HTTPAdapter):
         if timeout is None:
             kwargs["timeout"] = self.timeout
         return super().send(request, **kwargs)
+
+
 ORIGIN_CIPHERS = (
     'ECDH+AESGCM:DH+AESGCM:ECDH+AES256:ECDH+AES128:DH+AES256:DH+AES:ECDH+HIGH:DH+HIGH:ECDH+3DES:DH+3DES:RSA+AESGCM'
     ':RSA+AES:RSA+HIGH:RSA+3DES')

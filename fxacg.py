@@ -15,6 +15,7 @@ class FXAcgSign(BaseSign):
     def __init__(self):
         super(FXAcgSign, self).__init__("https://fxacg.net", app_name="飞雪ACG", app_key="FXACG",
                                         proxy=True)
+        self.retry_times = 3
         # 支持的方法
         self.exec_method = ["sign"]
         # 签到配置
@@ -25,11 +26,7 @@ class FXAcgSign(BaseSign):
         self.sign_text = '签到'
         self.sign_method = 'post'
 
-    def login(self, times=5) -> bool:
-        if times == 0:
-            print("失败次数过多")
-            return False
-        print(f"进行 {self.username} 登录-times:{times}")
+    def login(self) -> bool:
         response = self.session.get(f"{self.base_url}/member.php?mod=logging&action=login")
         selector = Selector(response=response)
         form_hash = selector.xpath('//input[@name="formhash"]/@value').extract_first("")
@@ -44,7 +41,7 @@ class FXAcgSign(BaseSign):
         if sec_hash and form_hash:
             verify_code = self.code(sec_hash, update, 5)
             if not verify_code:
-                return self.login(times - 1)
+                return False
             url = f"{self.base_url}/member.php?mod=logging&action=login&loginsubmit=yes&loginhash=Lmv7D&inajax=1"
             payload = f'formhash={form_hash}&referer={quote(self.base_url, safe="")}%2Fforum.php&loginfield=username&username={self.username}&password={self.password}&seccodehash={sec_hash}&seccodemodid=member%3A%3Alogging&seccodeverify={verify_code}&questionid=0&answer=&cookietime=2592000'
             headers = {
@@ -70,8 +67,9 @@ class FXAcgSign(BaseSign):
             jump_src = result_selector.re(r"succeedhandle_\('(.*?)'")
             if len(jump_src) == 0:
                 result = result_selector.re(r'errorhandle_\((.*?),')
-                print(result[0])
-                return self.login(times - 1)
+                if len(result) > 0:
+                    print(result[0])
+                return False
             else:
                 self.session.get(jump_src[0])
                 print(f'登录成功')
