@@ -331,6 +331,9 @@ class BaseSign:
         except urllib3.exceptions.ReadTimeoutError as e:
             traceback.print_exc()
             content += e.args[0].reason.args[0]
+        except requests.exceptions.ReadTimeout as e:
+            traceback.print_exc()
+            content += e.args[0].reason.args[0]
         except requests.exceptions.RequestException as e:
             traceback.print_exc()
             content += "网络请求有误，请检查代理设置"
