@@ -27,7 +27,8 @@ class BaseSign:
     url_info: ParseResult
     content: list
     exec_method: list
-    retry_times: 1
+    retry_times = 1
+    ua: str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
     # 用户信息配置
     username: str
     password: str
@@ -186,8 +187,7 @@ class BaseSign:
         adapter = TimeoutHTTPAdapter(timeout=timeout, max_retries=retries)
         session.mount("https://", adapter)
         session.mount("http://", adapter)
-        session.headers.update({
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"})
+        session.headers.update({"User-Agent": self.ua})
         self.session = session
         if proxy:
             proxy = os.getenv('SIGN_UP_PROXY')

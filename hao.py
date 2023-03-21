@@ -9,6 +9,7 @@ from scrapy import Selector
 
 from base import BaseSign
 from gifcode import handle_yzm
+from tools import re_handler, FORM_HASH, UPDATE, IDHASH, DISCODE
 
 
 class HaoSign(BaseSign):
@@ -23,26 +24,20 @@ class HaoSign(BaseSign):
         self.sign_text = '您今天还没有签到'
         self.sign_path = "qiandao/?mod=sign&operation=qiandao&formhash=%s&format=empty"
         self.form_hash_xpath = '//*[@id="scbar_form"]/input[2]/@value'
+        self.session.headers.update({
+            'authority': self.url_info.hostname,
+            'pragma': 'no-cache',
+            'sec-fetch-user': '?1',
+            'upgrade-insecure-requests': '1',
+            'User-Agent': 'Apifox/1.0.0 (https://www.apifox.cn)'
+        })
 
     def login(self) -> bool:
         response = self.session.get(f"{self.base_url}/member.php?mod=logging&action=login")
-        selector = Selector(response=response)
-        form_data = selector.re(r"formhash:'(\w*)'")
-        discode_data = selector.re(r"discode: '(\w*)'")
-        sec_data = selector.re(r"seccodehash: '(\w*)'")
-        update_data = selector.re(r"update=([0-9]*)&")
-        sec_hash = ""
-        form_hash = ""
-        update = ""
-        discode = ""
-        if len(form_data) != 0:
-            form_hash = form_data[0]
-        if len(sec_data) != 0:
-            sec_hash = sec_data[0]
-        if len(update_data) != 0:
-            update = update_data[0]
-        if len(discode_data) != 0:
-            discode = discode_data[0]
+        form_hash = re_handler(FORM_HASH, response.text)
+        update = re_handler(UPDATE, response.text)
+        sec_hash = re_handler(IDHASH, response.text)
+        discode = re_handler(DISCODE, response.text)
         if sec_hash and form_hash:
             verify_code = self.code(sec_hash, update)
             url = f"{self.base_url}/plugin.php?id=jzsjiale_isms:api"
@@ -79,6 +74,9 @@ class HaoSign(BaseSign):
             except Exception as e:
                 print("请求异常:\n", response.text)
                 return False
+        else:
+            self.pwl(f"页面元素获取失败:sec_hash{sec_hash} and form_hash{form_hash}")
+            return False
 
     def code(self, sec_hash, update) -> str:
         url = f"{self.base_url}/misc.php?mod=seccode&update={update}&idhash={sec_hash}"
