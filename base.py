@@ -26,7 +26,7 @@ class BaseSign:
     base_url: str
     url_info: ParseResult
     content: list
-    exec_method: list
+    exec_method: list = []
     retry_times = 1
     ua: str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
     # 用户信息配置
@@ -346,6 +346,20 @@ class BaseSign:
             traceback.print_exc()
             content += "执行异常，请查看日志排查"
         return content
+
+
+class SignPlugin:
+    # 签到页配置
+    index_path: str  # 签到页面路径
+    form_hash_xpath: str  # 签到页面formhash
+    sign_path: str  # 签到请求链接
+    sign_text_xpath: str  # 签到文本匹配路径
+    sign_text: str  # 签到文本
+    sign_method: str = "get"  # 签到方式，get/post
+    sign_mood: str = "very very good"  # 签到心情（仅post可用）
+
+    def setting(self):
+        pass
 
 
 class TimeoutHTTPAdapter(HTTPAdapter):
