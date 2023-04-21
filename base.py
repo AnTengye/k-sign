@@ -167,10 +167,13 @@ class BaseSign:
     }
 
     def __init__(self, base_url, app_name, app_key, proxy=False, timeout=10):
-        if base_url == "":
-            base_url = os.getenv(f'SIGN_URL_{app_key}')
+        env_url = os.getenv(f'SIGN_URL_{app_key}')
+        if env_url is None or env_url == "":
             if base_url == "":
                 raise f"未设置网址，请添加变量:SIGN_URL_{app_key}"
+        else:
+            base_url = env_url
+
         self.url_info = urlparse(base_url)
         self.base_url = base_url
         up = os.getenv(f'SIGN_UP_{app_key}')

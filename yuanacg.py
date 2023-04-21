@@ -12,7 +12,7 @@ from base import BaseSign
 
 class YuanACGSign(BaseSign):
     def __init__(self):
-        super(YuanACGSign, self).__init__("https://note.yuanacg.com", app_name="ACG次元小屋", app_key="YACG")
+        super(YuanACGSign, self).__init__("https://south.yuanacg.com", app_name="ACG次元小屋", app_key="YACG")
         # 支持的方法
         self.exec_method = ["sign"]
 
