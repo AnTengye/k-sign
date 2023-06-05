@@ -7,7 +7,7 @@ from urllib.parse import quote
 
 from scrapy import Selector
 
-from base import BaseSign, CipherSuiteAdapter
+from base import BaseSign
 
 
 class SiJiSSign(BaseSign):
