@@ -212,9 +212,9 @@ class BaseSign:
 
     def login(self) -> bool:
         if self.login_type == "login":
-            return self._code_login()
-        elif self.login_type == "login_code":
             return self._login()
+        elif self.login_type == "login_code":
+            return self._code_login()
         elif self.login_type == "login_cookie":
             return self._cookie_login()
         else:
