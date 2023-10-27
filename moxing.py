@@ -3,6 +3,8 @@
 cron: 0 0 8 * * *
 new Env('moxing签到');
 """
+import requests.utils
+
 from base import BaseSign
 
 
@@ -13,13 +15,14 @@ class MoxingSign(BaseSign):
         self.login_type = "login_code"
         self.login_setting_code_type = "gif"
         self.login_setting_code_check = True
+        self.session.cookies.set("is_agree", "1")
         # 支持的方法
         self.exec_method = ["sign"]
         # 签到配置
         self.index_path = ''
         self.sign_path = "plugin.php?id=k_misign:sign&operation=qiandao&format=global_usernav_extra&formhash=%s"
         self.sign_text_xpath = '//*[@id="fx_checkin_b"]/@alt'
-        self.sign_text = '签到领奖'
+        self.sign_text = '点击签到'
         self.form_hash_xpath = '//*[@id="scbar_form"]/input[2]/@value'
 
 
