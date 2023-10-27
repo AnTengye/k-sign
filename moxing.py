@@ -17,9 +17,9 @@ class MoxingSign(BaseSign):
         self.exec_method = ["sign"]
         # 签到配置
         self.index_path = ''
-        self.sign_path = "plugin.php?id=k_misign:sign&operation=qiandao&format=global_usernav_extra&formhash=%s&inajax=1&ajaxtarget=k_misign_topb"
+        self.sign_path = "plugin.php?id=k_misign:sign&operation=qiandao&format=global_usernav_extra&formhash=%s"
         self.sign_text_xpath = '//*[@id="fx_checkin_b"]/@alt'
-        self.sign_text = '点击签到'
+        self.sign_text = '签到领奖'
         self.form_hash_xpath = '//*[@id="scbar_form"]/input[2]/@value'
 
 

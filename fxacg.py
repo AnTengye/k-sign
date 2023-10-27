@@ -8,7 +8,7 @@ from base import BaseSign
 
 class FXAcgSign(BaseSign):
     def __init__(self):
-        super(FXAcgSign, self).__init__("https://fxacg.org", app_name="飞雪ACG", app_key="FXACG",
+        super(FXAcgSign, self).__init__("https://fxacg.cc", app_name="飞雪ACG", app_key="FXACG",
                                         proxy=True)
 
         self.retry_times = 3
