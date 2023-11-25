@@ -42,6 +42,7 @@ class BaseSign:
     # 签到页配置
     index_path: str  # 签到页面路径
     form_hash_xpath: str  # 签到页面formhash
+    is_sign: bool
     sign_path: str  # 签到请求链接
     sign_text_xpath: str  # 签到文本匹配路径
     sign_text: str  # 签到文本
@@ -189,7 +190,7 @@ class BaseSign:
             self.username = user_info[0]
             self.password = user_info[1]
         else:
-            raise f"未设置账号信息，请添加变量SIGN_UP_{app_key}"
+            raise "未设置账号信息，请添加变量SIGN_UP_"+app_key
         self.app_name = app_name
         self.content = list()
         session = requests.session()
@@ -222,6 +223,8 @@ class BaseSign:
             return False
 
     def sign(self) -> bool:
+        if self.is_sign:
+            return True
         qd_response = self.session.get(f"{self.base_url}/{self.index_path}")
         sign_selector = Selector(response=qd_response)
         sign_info = sign_selector.xpath(self.sign_text_xpath).extract_first()
@@ -249,6 +252,8 @@ class BaseSign:
         :param form_hash: 前端表单校验码
         :return:
         """
+        if self.is_sign:
+            return True
         response = self.session.get(
             f"{self.base_url}/{self.sign_path}" % form_hash)
         result_selector = Selector(response=response)
@@ -442,6 +447,52 @@ class BaseSign:
         :param form_hash: 前端表单校验码
         :return:
         """
+        if self.is_sign:
+            return True
+        url = f"{self.base_url}/plugin.php?id=dc_signin:sign&inajax=1"
+        payload = f'formhash={form_hash}&signsubmit=yes&handlekey=signin&emotid=1&referer={quote(self.base_url, safe="")}%2Fdc_signin-dc_signin.html&content={self.sign_mood}'
+        headers = {
+            'authority': self.url_info.hostname,
+            'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
+            'accept-language': 'zh-CN,zh;q=0.9,en;q=0.8,zh-TW;q=0.7',
+            'cache-control': 'no-cache',
+            'content-type': 'application/x-www-form-urlencoded',
+            'origin': self.base_url,
+            'pragma': 'no-cache',
+            'referer': f'{self.base_url}/dc_signin-dc_signin.html',
+            'sec-ch-ua': '"Google Chrome";v="107", "Chromium";v="107", "Not=A?Brand";v="24"',
+            'sec-ch-ua-mobile': '?0',
+            'sec-ch-ua-platform': '"Windows"',
+            'sec-fetch-dest': 'iframe',
+            'sec-fetch-mode': 'navigate',
+            'sec-fetch-site': 'same-origin',
+            'sec-fetch-user': '?1',
+            'upgrade-insecure-requests': '1',
+            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36'
+        }
+
+        response = self.session.post(url, headers=headers, data=payload)
+        result_selector = Selector(response=response)
+        jump_src = result_selector.re(r"succeedhandle_signin\('(.*?)', '(.*)'")
+        if len(jump_src) == 0:
+            result = result_selector.re(r'errorhandle_signin\((.*?),')
+            if len(result) == 0:
+                self.pwl(f'签到失败:{response.text}')
+                return False
+            self.pwl(result[0])
+            return False
+        else:
+            self.pwl(jump_src[1])
+        return True
+
+    def _post_content_sign(self, form_hash) -> bool:
+        """
+        适用于post请求的带心情的签到
+        :param form_hash: 前端表单校验码
+        :return:
+        """
+        if self.is_sign:
+            return True
         url = f"{self.base_url}/plugin.php?id=dc_signin:sign&inajax=1"
         payload = f'formhash={form_hash}&signsubmit=yes&handlekey=signin&emotid=1&referer={quote(self.base_url, safe="")}%2Fdc_signin-dc_signin.html&content={self.sign_mood}'
         headers = {
@@ -530,7 +581,7 @@ class BaseSign:
         ) as e:
             # 当网络不好时，进行重试
             traceback.print_exc()
-            content += e.args[0].reason.args[0]
+            content += str(e.args[0].reason.args)
             if self.retry_times > 0:
                 return self._exec(content)
         except requests.exceptions.RequestException as e:
