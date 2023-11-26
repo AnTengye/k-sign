@@ -14,6 +14,7 @@ class VikaSign(BaseSign):
         # 登录配置
         self.login_type = "login"
         # 支持的方法
+        self.is_sign = False
         self.exec_method = ["sign"]
         self.sign_path = "/wp-json/b2/v1/userMission"
 

@@ -42,7 +42,6 @@ class BaseSign:
     # 签到页配置
     index_path: str  # 签到页面路径
     form_hash_xpath: str  # 签到页面formhash
-    is_sign: bool
     sign_path: str  # 签到请求链接
     sign_text_xpath: str  # 签到文本匹配路径
     sign_text: str  # 签到文本
@@ -223,8 +222,6 @@ class BaseSign:
             return False
 
     def sign(self) -> bool:
-        if self.is_sign:
-            return True
         qd_response = self.session.get(f"{self.base_url}/{self.index_path}")
         sign_selector = Selector(response=qd_response)
         sign_info = sign_selector.xpath(self.sign_text_xpath).extract_first()
@@ -252,8 +249,6 @@ class BaseSign:
         :param form_hash: 前端表单校验码
         :return:
         """
-        if self.is_sign:
-            return True
         response = self.session.get(
             f"{self.base_url}/{self.sign_path}" % form_hash)
         result_selector = Selector(response=response)
@@ -447,8 +442,6 @@ class BaseSign:
         :param form_hash: 前端表单校验码
         :return:
         """
-        if self.is_sign:
-            return True
         url = f"{self.base_url}/plugin.php?id=dc_signin:sign&inajax=1"
         payload = f'formhash={form_hash}&signsubmit=yes&handlekey=signin&emotid=1&referer={quote(self.base_url, safe="")}%2Fdc_signin-dc_signin.html&content={self.sign_mood}'
         headers = {
@@ -491,8 +484,6 @@ class BaseSign:
         :param form_hash: 前端表单校验码
         :return:
         """
-        if self.is_sign:
-            return True
         url = f"{self.base_url}/plugin.php?id=dc_signin:sign&inajax=1"
         payload = f'formhash={form_hash}&signsubmit=yes&handlekey=signin&emotid=1&referer={quote(self.base_url, safe="")}%2Fdc_signin-dc_signin.html&content={self.sign_mood}'
         headers = {
