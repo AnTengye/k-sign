@@ -39,6 +39,7 @@ class BaseSign:
     login_type: str  # 登录方式 login: 常规登录 login_code: 需要普通验证码 login_cookie: 需要cookie方式
     login_setting_code_type: str  # 登录验证码类型 img|gif
     login_setting_code_check: bool  # 验证码是否需要校验
+    login_page_path: str  # 登录页面链接
     # 签到页配置
     index_path: str  # 签到页面路径
     form_hash_xpath: str  # 签到页面formhash
@@ -189,7 +190,7 @@ class BaseSign:
             self.username = user_info[0]
             self.password = user_info[1]
         else:
-            raise "未设置账号信息，请添加变量SIGN_UP_"+app_key
+            raise "未设置账号信息，请添加变量SIGN_UP_" + app_key
         self.app_name = app_name
         self.content = list()
         session = requests.session()
@@ -315,7 +316,11 @@ class BaseSign:
         :return:
         """
         print(f"进行 {self.username} 登录")
-        response = self.session.get(f"{self.base_url}/member.php?mod=logging&action=login")
+        if self.login_page_path is not None:
+            login_page_path = "member.php"
+        else:
+            login_page_path = self.login_page_path
+        response = self.session.get(f"{self.base_url}/{login_page_path}?mod=logging&action=login")
         selector = Selector(response=response)
         form_hash = selector.xpath('//input[@name="formhash"]/@value').extract_first("")
         sec_data = selector.re(r"updateseccode\('(\w*?)'")
@@ -330,7 +335,7 @@ class BaseSign:
             verify_code = self._code(sec_hash, update, 5)
             if not verify_code:
                 return False
-            url = f"{self.base_url}/member.php?mod=logging&action=login&loginsubmit=yes&loginhash=Lmv7D&inajax=1"
+            url = f"{self.base_url}/{login_page_path}?mod=logging&action=login&loginsubmit=yes&loginhash=Lmv7D&inajax=1"
             payload = f'formhash={form_hash}&referer={quote(self.base_url, safe="")}%2Fforum.php&loginfield=username&username={self.username}&password={self.password}&seccodehash={sec_hash}&seccodemodid=member%3A%3Alogging&seccodeverify={verify_code}&questionid=0&answer=&cookietime=2592000'
             headers = {
                 'authority': self.url_info.hostname,
@@ -340,7 +345,7 @@ class BaseSign:
                 'content-type': 'application/x-www-form-urlencoded',
                 'origin': self.base_url,
                 'pragma': 'no-cache',
-                'referer': f'{self.base_url}/member.php?mod=logging&action=login',
+                'referer': f'{self.base_url}/{login_page_path}?mod=logging&action=login',
                 'sec-ch-ua': '" Not A;Brand";v="99", "Chromium";v="102", "Google Chrome";v="102"',
                 'sec-ch-ua-mobile': '?1',
                 'sec-ch-ua-platform': '"Android"',
@@ -350,7 +355,6 @@ class BaseSign:
                 'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/102.0.0.0 Safari/537.36'
             }
             response = self.session.post(url, headers=headers, data=payload)
-            #
             result_selector = Selector(response=response)
             jump_src = result_selector.re(r"succeedhandle_\('(.*?)'")
             if len(jump_src) == 0:

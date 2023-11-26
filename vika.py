@@ -76,7 +76,7 @@ class VikaSign(BaseSign):
             if score == 0:
                 self.pwl("签到失败，请检查返回值")
                 return False
-            self.pwl(f"签到成功：当前积分：{score}")
+            self.pwl(f"签到成功：获得积分：{score}")
             return True
         self.pwl('签到失败' + response.text)
         return False
