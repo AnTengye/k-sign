@@ -19,6 +19,7 @@ class YueDuSign(BaseSign):
         self.login_type = "login_code"
         self.login_setting_code_type = "gif"
         self.login_setting_code_check = True
+        self.login_page_path = "misc.php"
         # 支持的方法
         self.exec_method = ["sign"]
         # 签到配置
