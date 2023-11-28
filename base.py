@@ -39,7 +39,7 @@ class BaseSign:
     login_type: str  # 登录方式 login: 常规登录 login_code: 需要普通验证码 login_cookie: 需要cookie方式
     login_setting_code_type: str  # 登录验证码类型 img|gif
     login_setting_code_check: bool  # 验证码是否需要校验
-    login_page_path: str  # 登录页面链接
+    login_page_path: str = ""  # 登录页面链接
     # 签到页配置
     index_path: str  # 签到页面路径
     form_hash_xpath: str  # 签到页面formhash
