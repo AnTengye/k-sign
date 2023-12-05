@@ -61,13 +61,14 @@ class VikaSign(BaseSign):
             finish = response_info.get("task_").get("finish")
             if finish == 1:
                 self.is_sign = True
-            self.pwl(f"登录信息：用户名{name},当前积分：{score}, 登录状态:{self.is_sign}")
+            self.pwl(f"登录信息：用户名{name},当前积分：{score}, 签到状态:{self.is_sign}")
             return True
         self.pwl('登录失败' + response.text)
         return False
 
     def sign(self) -> bool:
         if self.is_sign:
+            self.pwl("已经签到过了，跳过")
             return True
         response = self.session.post(f"{self.base_url}/{self.sign_path}")
         if response.status_code == 200:
