@@ -58,13 +58,40 @@ class VikaSign(BaseSign):
                 "Authorization": "Bearer " + token
             }
             self.session.headers.update(token_header)
-            finish = response_info.get("task_").get("finish")
-            if finish == 1:
-                self.is_sign = True
-            self.pwl(f"登录信息：用户名{name},当前积分：{score}, 签到状态:{self.is_sign}")
+            self.pwl(f"登录信息：用户名{name},当前积分：{score}")
+            self.get_info()
             return True
         self.pwl('登录失败' + response.text)
         return False
+
+    def get_info(self):
+        url = f"{self.base_url}/wp-json/b2/v1/getUserInfo"
+
+        headers = {
+            'authority': self.url_info.hostname,
+            'accept': 'application/json, text/plain, */*',
+            'accept-language': 'zh-CN,zh;q=0.9',
+            'cache-control': 'no-cache',
+            'origin': self.base_url,
+            'pragma': 'no-cache',
+            'referer': f'{self.base_url}/post',
+            'sec-ch-ua': '"Google Chrome";v="119", "Chromium";v="119", "Not?A_Brand";v="24"',
+            'sec-ch-ua-mobile': '?0',
+            'sec-ch-ua-platform': '"Windows"',
+            'sec-fetch-dest': 'empty',
+            'sec-fetch-mode': 'cors',
+            'sec-fetch-site': 'same-origin',
+            'content-type': 'application/json'
+        }
+        response = self.session.post(url, headers=headers)
+        if response.status_code == 200:
+            response_info = json.loads(response.text)
+            finish = response_info.get("user_data").get("task_").get("finish")
+            if finish == 1:
+                self.is_sign = True
+            self.pwl(f"签到状态:{self.is_sign}")
+        else:
+            self.pwl('获取用户信息失败' + response.text)
 
     def sign(self) -> bool:
         if self.is_sign:
@@ -73,6 +100,9 @@ class VikaSign(BaseSign):
         response = self.session.post(f"{self.base_url}/{self.sign_path}")
         if response.status_code == 200:
             response_info = json.loads(response.text)
+            if response_info is str:
+                self.pwl(f"签到失败，请检查返回值:{response_info}")
+                return False
             score = response_info.get("credit")
             if score == 0:
                 self.pwl("签到失败，请检查返回值")
