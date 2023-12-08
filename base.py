@@ -576,7 +576,7 @@ class BaseSign:
         ) as e:
             # 当网络不好时，进行重试
             traceback.print_exc()
-            content += str(e.args[0].reason.args)
+            content += str(e.args[0])
             if self.retry_times > 0:
                 return self._exec(content)
         except requests.exceptions.RequestException as e:
