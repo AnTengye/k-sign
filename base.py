@@ -360,11 +360,11 @@ class BaseSign:
             if len(jump_src) == 0:
                 result = result_selector.re(r'errorhandle_\((.*?),')
                 if len(result) > 0:
-                    print(result[0])
+                    self.pwl(result[0])
                 return False
             else:
                 self.session.get(jump_src[0])
-                print(f'登录成功')
+                self.pwl(f'登录成功')
             return True
         else:
             self.pwl("链接访问异常")
@@ -554,9 +554,13 @@ class BaseSign:
         content = self._exec("")
         send(title=self.app_name, content=content)
 
+    def pre(self):
+        pass
+
     def _exec(self, content) -> str:
         self.retry_times -= 1
         try:
+            self.pre()
             login = self.login()
             result = {"登录": login}
             if login:
