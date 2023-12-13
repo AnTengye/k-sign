@@ -1,9 +1,8 @@
 # -*- coding:utf-8 -*-
 """
 cron: 0 0 8 * * *
-new Env('vika签到');
+new Env('hostloc签到');
 """
-import json
 import random
 import re
 import textwrap
@@ -13,7 +12,6 @@ import requests
 
 from base import BaseSign
 from pyaes import AESModeOfOperationCBC
-from scrapy import Selector
 
 
 class HostlocSign(BaseSign):
