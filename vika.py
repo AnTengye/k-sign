@@ -59,7 +59,7 @@ class VikaSign(BaseSign):
             }
             self.session.headers.update(token_header)
             self.pwl(f"登录信息：用户名{name},当前积分：{score}")
-            self.get_info()
+            self.get_mission()
             return True
         self.pwl('登录失败' + response.text)
         return False
@@ -93,14 +93,58 @@ class VikaSign(BaseSign):
         else:
             self.pwl('获取用户信息失败' + response.text)
 
+    def get_mission(self):
+        url = f"{self.base_url}/wp-json/b2/v1/getUserMission"
+        headers = {
+            'authority': self.url_info.hostname,
+            'accept': 'application/json, text/plain, */*',
+            'accept-language': 'zh-CN,zh;q=0.9',
+            'cache-control': 'no-cache',
+            'origin': self.base_url,
+            'pragma': 'no-cache',
+            'referer': f'{self.base_url}/post',
+            'sec-ch-ua': '"Google Chrome";v="119", "Chromium";v="119", "Not?A_Brand";v="24"',
+            'sec-ch-ua-mobile': '?0',
+            'sec-ch-ua-platform': '"Windows"',
+            'sec-fetch-dest': 'empty',
+            'sec-fetch-mode': 'cors',
+            'sec-fetch-site': 'same-origin',
+            'content-type': 'application/json'
+        }
+        response = self.session.post(url, headers=headers, json={
+            "count": 20,
+            "paged": 1
+        })
+        if response.status_code == 200:
+            self.pwl('获取任务信息成功')
+            self.get_info()
+        else:
+            self.pwl('获取任务信息失败' + response.text)
+
     def sign(self) -> bool:
         if self.is_sign:
             self.pwl("已经签到过了，跳过")
             return True
-        response = self.session.post(f"{self.base_url}/{self.sign_path}")
+        headers = {
+            'authority': self.url_info.hostname,
+            'accept': 'application/json, text/plain, */*',
+            'accept-language': 'zh-CN,zh;q=0.9',
+            'cache-control': 'no-cache',
+            'origin': self.base_url,
+            'pragma': 'no-cache',
+            'referer': f'{self.base_url}/post',
+            'sec-ch-ua': '"Google Chrome";v="119", "Chromium";v="119", "Not?A_Brand";v="24"',
+            'sec-ch-ua-mobile': '?0',
+            'sec-ch-ua-platform': '"Windows"',
+            'sec-fetch-dest': 'empty',
+            'sec-fetch-mode': 'cors',
+            'sec-fetch-site': 'same-origin',
+            'content-type': 'application/json'
+        }
+        response = self.session.post(f"{self.base_url}/{self.sign_path}", headers=headers)
         if response.status_code == 200:
             response_info = json.loads(response.text)
-            if response_info is str:
+            if isinstance(response_info, str):
                 self.pwl(f"签到失败，请检查返回值:{response_info}")
                 return False
             score = response_info.get("credit")
