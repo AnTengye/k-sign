@@ -14,10 +14,10 @@ class KsjSign(BaseSign):
         # 支持的方法
         self.exec_method = ["sign"]
         # 签到配置
-        self.index_path = 'qiandao/'
-        self.sign_text_xpath = '//*[@class="paiming cl"]/div[1]/text()'
-        self.sign_text = '您今天还没有签到'
-        self.sign_path = "qiandao/?mod=sign&operation=qiandao&formhash=%s&format=empty"
+        self.index_path = 'qiandao.php'
+        self.sign_text_xpath = '//div[@class="ct2 cl"]/div[2]/div[1]/a/text()'
+        self.sign_text = '点击打卡'
+        self.sign_path = "qiandao.php?sign=%s"
         self.form_hash_xpath = '//*[@id="scbar_form"]/input[2]/@value'
 
 

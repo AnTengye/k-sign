@@ -36,7 +36,7 @@ class BaseSign:
     app_name: str
     app_key: str
     # 登录配置
-    login_type: str  # 登录方式 login: 常规登录 login_code: 需要普通验证码 login_cookie: 需要cookie方式
+    login_type: str = "" # 登录方式 login: 常规登录 login_code: 需要普通验证码 login_cookie: 需要cookie方式
     login_setting_code_type: str  # 登录验证码类型 img|gif
     login_setting_code_check: bool  # 验证码是否需要校验
     login_page_path: str = ""  # 登录页面链接
@@ -272,6 +272,9 @@ class BaseSign:
         # //input[@name="formhash"]/@value
         # //*[@id="scbar_form"]/input[2]/@value
         form_hash = selector.xpath('//input[@name="formhash"]/@value').extract_first()
+        if form_hash is None:
+            self.pwl("formhash匹配失败")
+            return False
         url = f"{self.base_url}/member.php?mod=logging&action=login&loginsubmit=yes&loginhash=LocOL&inajax=1"
         payload = f'formhash={form_hash}&referer={quote(self.base_url, safe="")}%2Fportal.php&username={self.username}&password={self.password}&questionid=0&answer=&cookietime=2592000'
         headers = {
