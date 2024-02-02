@@ -3,13 +3,9 @@
 cron: 0 0 8 * * *
 new Env('hao4k签到');
 """
-import json
-
-from scrapy import Selector
-from urllib.parse import urlparse, ParseResult, quote
+from urllib.parse import quote
 from base import BaseSign
-from gifcode import handle_yzm
-from tools import re_handler, FORM_HASH, UPDATE, IDHASH, DISCODE
+from tools import re_handler, FORM_HASH
 
 
 class HaoSign(BaseSign):
