@@ -3,22 +3,15 @@
 cron: 0 0 8 * * *
 new Env('JavPlater登录');
 """
-import json
-import os
-import re
-from urllib.parse import quote
-
-from scrapy import Selector
 
 from base import BaseSign
-from gifcode import handle_yzm
-from notify import send
 
 
 class JavPlayerSign(BaseSign):
     """
     由于登录增加了google code，目前失效中
     """
+
     def __init__(self):
         super(JavPlayerSign, self).__init__("https://javpcn.com", app_name="JavPlater", app_key="JAVPCN")
         self.retry_times = 3

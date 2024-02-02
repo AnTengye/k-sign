@@ -3,14 +3,11 @@
 cron: 0 0 20 * * *
 new Env('2djgame签到');
 """
-import json
-import os
 from urllib.parse import quote
 
 from scrapy import Selector
 
 from gifcode import handle_yzm
-from notify import send
 from base import BaseSign
 
 

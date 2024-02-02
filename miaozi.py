@@ -3,8 +3,6 @@
 cron: 0 3 8,20 * * *
 new Env('喵子小屋签到');
 """
-import json
-import os
 import random
 import re
 from urllib.parse import quote
@@ -12,7 +10,6 @@ from urllib.parse import quote
 from scrapy import Selector
 
 from gifcode import handle_yzm
-from notify import send
 from base import BaseSign
 
 
