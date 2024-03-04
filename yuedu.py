@@ -3,11 +3,6 @@
 cron: 0 15 8 * * *
 new Env('阅读论坛签到');
 """
-from urllib.parse import quote
-
-from scrapy import Selector
-
-from gifcode import handle_yzm
 from base import BaseSign
 
 
