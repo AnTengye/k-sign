@@ -553,6 +553,15 @@ class BaseSign:
         alphabet = string.ascii_letters + string.digits
         return ''.join(secrets.choice(alphabet) for _ in range(length))
 
+    def check_code(self, input_str, str_len=4):
+        if len(input_str) != str_len:
+            return False
+        # 检查字符串是否只包含英文字母或数字
+        if not input_str.isalnum():
+            return False
+
+        return True
+
     def run(self):
         content = self._exec("")
         send(title=self.app_name, content=content)
