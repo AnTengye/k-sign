@@ -29,7 +29,7 @@ class MiaoSign(BaseSign):
     ]
 
     def __init__(self):
-        super(MiaoSign, self).__init__("https://forum.h3dhub.com", app_name="喵子小屋", app_key="MIAOZI")
+        super(MiaoSign, self).__init__("https://club.h3dhub.com", app_name="喵子小屋", app_key="MIAOZI")
         self.retry_times = 3
         # 支持的方法
         self.exec_method = ["sign", "auto_reply"]
