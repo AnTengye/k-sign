@@ -12,7 +12,7 @@ from base import BaseSign
 
 class SiJiSSign(BaseSign):
     def __init__(self):
-        super(SiJiSSign, self).__init__("https://sijishea.com", app_name="司机社", app_key="SJS", proxy=True)
+        super(SiJiSSign, self).__init__("https://sjsvv.vip", app_name="司机社", app_key="SJS", proxy=True)
         self.login_retry = 3
         # 支持的方法
         self.exec_method = ["sign"]
