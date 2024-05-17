@@ -11,7 +11,7 @@ from base import BaseSign
 
 class YYGSign(BaseSign):
     def __init__(self):
-        super(YuanACGSign, self).__init__("https://yyg.world", app_name="嘤嘤怪之家", app_key="YYG")
+        super(YYGSign, self).__init__("https://yyg.world", app_name="嘤嘤怪之家", app_key="YYG")
         # 登录配置
         self.login_type = "login_cookie"
         # 支持的方法
