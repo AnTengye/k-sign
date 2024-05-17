@@ -4,7 +4,7 @@ cron: 0 0 8 * * *
 new Env('嘤嘤怪签到');
 """
 
-from scrapy import Selector
+import json
 
 from base import BaseSign
 
