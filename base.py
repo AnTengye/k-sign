@@ -40,6 +40,8 @@ class BaseSign:
     login_setting_code_type: str  # 登录验证码类型 img|gif
     login_setting_code_check: bool  # 验证码是否需要校验
     login_page_path: str = ""  # 登录页面链接
+    login_resp_success: str = r"succeedhandle_\('(.*?)'"
+    login_resp_error: str = r"errorhandle_\((.*?),"
     # 签到页配置
     index_path: str  # 签到页面路径
     form_hash_xpath: str  # 签到页面formhash
@@ -367,9 +369,9 @@ class BaseSign:
             }
             response = self.session.post(url, headers=headers, data=payload)
             result_selector = Selector(response=response)
-            jump_src = result_selector.re(r"succeedhandle_\('(.*?)'")
+            jump_src = result_selector.re(login_resp_success)
             if len(jump_src) == 0:
-                result = result_selector.re(r'errorhandle_\((.*?),')
+                result = result_selector.re(login_resp_error)
                 if len(result) > 0:
                     self.pwl(result[0])
                 return False
