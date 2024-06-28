@@ -181,6 +181,11 @@ class BaseSign:
                 raise f"未设置网址，请添加变量:SIGN_URL_{app_key}"
         else:
             base_url = env_url
+        env_proxy = os.getenv(f'SIGN_PROXY_{app_key}')
+        if env_proxy is None or env_proxy == "False":
+            proxy=False
+        else:
+            proxy = env_proxy
 
         self.url_info = urlparse(base_url)
         self.base_url = base_url
