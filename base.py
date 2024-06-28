@@ -37,11 +37,12 @@ class BaseSign:
     app_key: str
     # 登录配置
     login_type: str = "" # 登录方式 login: 常规登录 login_code: 需要普通验证码 login_cookie: 需要cookie方式
-    login_setting_code_type: str  # 登录验证码类型 img|gif
-    login_setting_code_check: bool  # 验证码是否需要校验
+    login_setting_code_type: str = "img" # 登录验证码类型 img|gif
+    login_setting_code_check: bool = False  # 验证码是否需要校验
     login_page_path: str = ""  # 登录页面链接
     login_resp_success: str = r"succeedhandle_\('(.*?)'"
     login_resp_error: str = r"errorhandle_\((.*?),"
+    code_debug: bool = False
     # 签到页配置
     index_path: str  # 签到页面路径
     form_hash_xpath: str  # 签到页面formhash
@@ -232,6 +233,7 @@ class BaseSign:
             self.pwl("未实现登录")
             return False
 
+
     def sign(self) -> bool:
         qd_response = self.session.get(f"{self.base_url}/{self.index_path}")
         sign_selector = Selector(response=qd_response)
@@ -270,7 +272,7 @@ class BaseSign:
         else:
             return True
 
-    def _login(self):
+    def _login(self) -> bool:
         """
         通用登录（不含验证码）
         :return:
@@ -323,17 +325,17 @@ class BaseSign:
         self.pwl('登录成功')
         return True
 
-    def _code_login(self):
+    def _code_login(self) -> bool:
         """
         通用登录（含验证码）
         :return:
         """
         print(f"进行 {self.username} 登录")
-        if self.login_page_path is not None:
-            login_page_path = "member.php"
+        if self.login_page_path is None:
+            login_page_path = "member.php?mod=logging&action=login"
         else:
             login_page_path = self.login_page_path
-        response = self.session.get(f"{self.base_url}/{login_page_path}?mod=logging&action=login")
+        response = self.session.get(f"{self.base_url}/{login_page_path}")
         selector = Selector(response=response)
         form_hash = selector.xpath('//input[@name="formhash"]/@value').extract_first("")
         sec_data = selector.re(r"updateseccode\('(\w*?)'")
@@ -369,9 +371,9 @@ class BaseSign:
             }
             response = self.session.post(url, headers=headers, data=payload)
             result_selector = Selector(response=response)
-            jump_src = result_selector.re(login_resp_success)
+            jump_src = result_selector.re(self.login_resp_success)
             if len(jump_src) == 0:
-                result = result_selector.re(login_resp_error)
+                result = result_selector.re(self.login_resp_error)
                 if len(result) > 0:
                     self.pwl(result[0])
                 return False
@@ -421,7 +423,7 @@ class BaseSign:
         payload = {}
         url = f"{self.base_url}/misc.php?mod=seccode&update={update}&idhash={sec_hash}"
         response = self.session.get(url, headers=headers, data=payload)
-        result = handle_yzm(response.content, t=self.login_setting_code_type)
+        result = handle_yzm(response.content, t=self.login_setting_code_type, debug=self.code_debug)
         if result.encode().isalnum():
             if self.login_setting_code_check:
                 check_url = f"{self.base_url}/misc.php?mod=seccode&action=check&inajax=1&modid=member::logging&idhash={sec_hash}&secverify={result}"
