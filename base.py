@@ -183,9 +183,9 @@ class BaseSign:
             base_url = env_url
         env_proxy = os.getenv(f'SIGN_PROXY_{app_key}')
         if env_proxy is None or env_proxy == "False":
-            proxy=False
+            proxy=proxy
         else:
-            proxy = env_proxy
+            proxy = True
 
         self.url_info = urlparse(base_url)
         self.base_url = base_url
