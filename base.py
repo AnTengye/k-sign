@@ -182,10 +182,13 @@ class BaseSign:
         else:
             base_url = env_url
         env_proxy = os.getenv(f'SIGN_PROXY_{app_key}')
-        if env_proxy is None or env_proxy == "False":
+        if env_proxy is None or env_proxy == "":
             proxy=proxy
         else:
-            proxy = True
+            if env_proxy == "False":
+                proxy = False
+            else:
+                proxy = True
 
         self.url_info = urlparse(base_url)
         self.base_url = base_url
