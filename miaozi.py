@@ -72,14 +72,14 @@ class MiaoSign(BaseSign):
             jump_src = result_selector.re(r"succeedhandle_\('(.*?)'")
             if len(jump_src) == 0:
                 result = result_selector.re(r"errorhandle_\('(.*?)'")
-                print(result[0])
+                self.pwl(result[0])
                 return False
             else:
                 self.session.get(jump_src[0])
-                print(f'登录成功')
+                self.pwl(f'登录成功')
             return True
         else:
-            print(f"表单校验异常:{form_hash}-{sec_hash}")
+            self.pwl(f"表单校验异常:{form_hash}-{sec_hash}")
 
     def code(self, sec_hash, update) -> str:
         url = f"{self.base_url}/misc.php?mod=seccode&update={update}&idhash={sec_hash}"
@@ -103,7 +103,7 @@ class MiaoSign(BaseSign):
         return handle_yzm(response.content)
 
     def sign(self) -> bool:
-        print("每日签到开始")
+        self.pwl("每日签到开始")
         url = f"{self.base_url}/home.php?mod=task&do=apply&id=14"
         payload = {}
         headers = {
@@ -139,7 +139,7 @@ class MiaoSign(BaseSign):
         return self.reply(target)
 
     def get_target(self) -> str:
-        print("获取第一个帖子")
+        self.pwl("获取第一个帖子")
         # 团员活动2D区 forum-51-1.html
         url = f"{self.base_url}/forum-51-1.html"
         payload = {}
