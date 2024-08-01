@@ -84,7 +84,7 @@ class TiaoKSign(BaseSign):
             if score:
                 self.pwl(f"签到失败:{response.text}")
                 return False
-            self.pwl('签到成功' + response_info.get("msg"))
+            self.pwl('签到成功')
             return True
         self.pwl('签到失败' + response.text)
         return False
