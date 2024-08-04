@@ -40,6 +40,7 @@ class BaseSign:
     login_setting_code_type: str = "img" # 登录验证码类型 img|gif
     login_setting_code_check: bool = False  # 验证码是否需要校验
     login_page_path: str = ""  # 登录页面链接
+    login_update_page_path: str = ""  # 登录页面验证码链接
     login_resp_success: str = r"succeedhandle_\('(.*?)'"
     login_resp_error: str = r"errorhandle_\((.*?),"
     code_debug: bool = False
@@ -331,7 +332,7 @@ class BaseSign:
         :return:
         """
         print(f"进行 {self.username} 登录")
-        if self.login_page_path is None:
+        if self.login_page_path == "":
             login_page_path = "member.php?mod=logging&action=login"
         else:
             login_page_path = self.login_page_path
@@ -346,6 +347,17 @@ class BaseSign:
             sec_hash = sec_data[0]
         if len(update_data) != 0:
             update = update_data[0]
+        else:
+            random_float = random.uniform(0, 1)
+            if self.login_update_page_path == "":
+                login_update_page_path = f"misc.php?mod=seccode&action=update&idhash={sec_hash}&{random_float}&modid=member::logging"
+            else:
+                login_update_page_path = self.login_update_page_path
+            update_response = self.session.get(f"{self.base_url}/{login_update_page_path}")
+            update_selector = Selector(response=update_response)
+            update_data = update_selector.re(r"update=([0-9]*)&")
+            if len(update_data) != 0:
+                update = update_data[0]
         if sec_hash and form_hash:
             verify_code = self._code(sec_hash, update, 5)
             if not verify_code:
