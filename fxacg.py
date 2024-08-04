@@ -4,7 +4,7 @@ cron: 0 15 8 * * *
 new Env('飞雪acg签到');
 """
 from base import BaseSign
-
+from urllib.parse import quote
 
 class FXAcgSign(BaseSign):
     def __init__(self):
@@ -16,6 +16,8 @@ class FXAcgSign(BaseSign):
         self.login_type = "login_code"
         self.login_setting_code_type = "img"
         self.login_setting_code_check = True
+        self.login_page_path = f'member.php?mod=logging&action=login&referer={quote(self.base_url, safe="")}forum.html&infloat=yes&handlekey=login&inajax=1&ajaxtarget=fwin_content_login'
+        self.login_resp_success = r"succeedhandle_login\('(.*?)'"
         # 支持的方法
         self.exec_method = ["sign"]
         # 签到配置
