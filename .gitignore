@@ -2,3 +2,4 @@
 venv
 venvv
 __pycache__
+.run
