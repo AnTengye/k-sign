@@ -1,6 +1,6 @@
 # -*- coding:utf-8 -*-
 """
-cron: 0 15 9 * * *
+cron: 0 15 18 * * *
 new Env('2048签到');
 """
 import datetime
@@ -10,7 +10,6 @@ import string
 from scrapy import Selector
 
 from base import BaseSign
-from requests_toolbelt import MultipartEncoder
 
 
 # from http.client import HTTPConnection
