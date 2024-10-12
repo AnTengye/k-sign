@@ -17,10 +17,9 @@ from base import BaseSign
 class LJDSign(BaseSign):
     # 自动回复列表
     auto_reply_msg = [
-        "谢谢楼主分享！",
-        "感谢分享"
-        "感谢楼主分享！"
-        "啧啧啧，有点东西"
+        "gan xie luo zhu fen xiang",
+        "ganxiefenxiang"
+        "ganxielouzhufenxiang!"
     ]
 
     def __init__(self):
@@ -65,8 +64,8 @@ class LJDSign(BaseSign):
         # 请求数据
         data = {
             "lgt": "0",
-            "pwuser": "as2674as",
-            "pwpwd": "Wwrr2674996160",
+            "pwuser": self.username,
+            "pwpwd": self.password,
             "question": "0",
             "customquest": "",
             "answer": "",
