@@ -17,7 +17,6 @@ class AkileSign(BaseSign):
         # 支持的方法
         self.is_sign = False
         self.exec_method = ["sign"]
-        self.sign_path = "/api/v1/user/Checkin"
 
     def _login(self):
         """
@@ -85,7 +84,7 @@ class AkileSign(BaseSign):
             'sec-fetch-site': 'same-origin',
             'content-type': 'application/json'
         }
-        response = self.session.get(f"{self.base_url}/{self.sign_path}", headers=headers)
+        response = self.session.get(f"{self.base_url}/api/v1/user/Checkin", headers=headers)
         if response.status_code == 200:
             response_info = json.loads(response.text)
             if isinstance(response_info, str):
