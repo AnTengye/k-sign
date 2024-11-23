@@ -57,7 +57,7 @@ class AkileSign(BaseSign):
                 return False
             token = response_info.get("data").get("token")
             token_header = {
-                "Authorization": "Bearer " + token
+                "Authorization": token
             }
             self.session.headers.update(token_header)
             return True
