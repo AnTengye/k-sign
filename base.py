@@ -221,7 +221,7 @@ class BaseSign:
                 })
         self.session.verify = False
 
-        print(f"自助脚本初始化完成：{base_url}")
+        print(f"自助脚本初始化完成：\n目标地址：{self.base_url}\n用户名：{self.username}\n代理状态：{proxy}")
 
     def login(self) -> bool:
         if self.login_type == "login":
