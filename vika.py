@@ -16,7 +16,7 @@ class VikaSign(BaseSign):
         # 支持的方法
         self.is_sign = False
         self.exec_method = ["sign"]
-        self.sign_path = "/wp-json/b2/v1/userMission"
+        self.sign_path = "/api/vikacg/v1/userMission"
 
     def _login(self):
         """
@@ -24,7 +24,7 @@ class VikaSign(BaseSign):
         :return:
         """
         print(f"进行 {self.username} 登录")
-        url = f"{self.base_url}/wp-json/jwt-auth/v1/token"
+        url = f"{self.base_url}/api/vikacg/v1/login"
 
         headers = {
             'authority': self.url_info.hostname,
@@ -43,58 +43,29 @@ class VikaSign(BaseSign):
             'content-type': 'application/json'
         }
         response = self.session.post(url, headers=headers, json={
-            "username": self.username,
+            "account": self.username,
             "password": self.password
         })
+        # {'status': 'success', 'code': 200, 'statusCode': 200, 'statusMessage': '登录成功', 'message': '登录成功', 'data': {'token': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1aWQiOjMwMDI2MCwicm9sZSI6InVzZXIiLCJpYXQiOjE3NjE4MzM1MDMsImV4cCI6MTc5MzM5MTEwM30.HH495U1kodpzHtaQoUYfQfEKlvAE6haSQxfKA8HOekk'}}
         if response.status_code == 200:
             response_info = json.loads(response.text)
-            name = response_info.get("name")
-            if name == "":
-                self.pwl("登录失败，请检查返回值")
+            resp_code = response_info.get("code")
+            if resp_code != 200:
+                self.pwl(f"登录失败:{response_info.get('message')}，请检查返回值")
                 return False
-            score = response_info.get("credit")
-            token = response_info.get("token")
+            token = response_info.get("data").get("token")
             token_header = {
                 "Authorization": "Bearer " + token
             }
             self.session.headers.update(token_header)
-            self.pwl(f"登录信息：用户名{name},当前积分：{score}")
-            self.get_mission()
+            self.get_info()
             return True
         self.pwl('登录失败' + response.text)
         return False
 
     def get_info(self):
-        url = f"{self.base_url}/wp-json/b2/v1/getUserInfo"
+        url = f"{self.base_url}/api/vikacg/v1/getUserInfo"
 
-        headers = {
-            'authority': self.url_info.hostname,
-            'accept': 'application/json, text/plain, */*',
-            'accept-language': 'zh-CN,zh;q=0.9',
-            'cache-control': 'no-cache',
-            'origin': self.base_url,
-            'pragma': 'no-cache',
-            'referer': f'{self.base_url}/post',
-            'sec-ch-ua': '"Google Chrome";v="119", "Chromium";v="119", "Not?A_Brand";v="24"',
-            'sec-ch-ua-mobile': '?0',
-            'sec-ch-ua-platform': '"Windows"',
-            'sec-fetch-dest': 'empty',
-            'sec-fetch-mode': 'cors',
-            'sec-fetch-site': 'same-origin',
-            'content-type': 'application/json'
-        }
-        response = self.session.post(url, headers=headers)
-        if response.status_code == 200:
-            response_info = json.loads(response.text)
-            finish = response_info.get("user_data").get("task_").get("finish")
-            if finish == 1:
-                self.is_sign = True
-            self.pwl(f"签到状态:{self.is_sign}")
-        else:
-            self.pwl('获取用户信息失败' + response.text)
-
-    def get_mission(self):
-        url = f"{self.base_url}/wp-json/b2/v1/getUserMission"
         headers = {
             'authority': self.url_info.hostname,
             'accept': 'application/json, text/plain, */*',
@@ -112,14 +83,22 @@ class VikaSign(BaseSign):
             'content-type': 'application/json'
         }
         response = self.session.post(url, headers=headers, json={
-            "count": 20,
-            "paged": 1
+            "detail": True
         })
         if response.status_code == 200:
-            self.pwl('获取任务信息成功')
-            self.get_info()
+            response_info = json.loads(response.text)
+            resp_code = response_info.get("code")
+            if resp_code != 200:
+                self.pwl(f"获取用户信息失败:{response_info.get('message')}，请检查返回值")
+                return False
+            basic = response_info.get("data").get("basic")
+            credit = response_info.get("data").get("credit")
+            self.pwl(f"用户信息：{basic.get('name')},积分：{credit.get('count')}")
+            if credit.get("sign_count") != 0:
+                self.is_sign = True
+            self.pwl(f"签到状态:{self.is_sign}")
         else:
-            self.pwl('获取任务信息失败' + response.text)
+            self.pwl('获取用户信息失败' + response.text)
 
     def sign(self) -> bool:
         if self.is_sign:
@@ -141,17 +120,17 @@ class VikaSign(BaseSign):
             'sec-fetch-site': 'same-origin',
             'content-type': 'application/json'
         }
-        response = self.session.post(f"{self.base_url}/{self.sign_path}", headers=headers)
+        response = self.session.post(f"{self.base_url}/{self.sign_path}", headers=headers, json={
+        })
         if response.status_code == 200:
             response_info = json.loads(response.text)
-            if isinstance(response_info, str):
-                self.pwl(f"签到失败，请检查返回值:{response_info}")
+            resp_code = response_info.get("code")
+            if resp_code != 200:
+                self.pwl(f"签到失败:{response_info.get('message')}，请检查返回值")
                 return False
-            score = response_info.get("credit")
-            if score == 0:
-                self.pwl("签到失败，请检查返回值")
-                return False
-            self.pwl(f"签到成功：获得积分：{score}")
+            count = response_info.get("data").get("count")
+            sign_count = response_info.get("data").get("sign_count")
+            self.pwl(f"签到成功：获得积分：{sign_count}, 总积分：{count}")
             return True
         self.pwl('签到失败' + response.text)
         return False
