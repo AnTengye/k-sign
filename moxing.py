@@ -12,7 +12,7 @@ from base import BaseSign
 
 class MoxingSign(BaseSign):
     def __init__(self):
-        super(MoxingSign, self).__init__("https://moxing.show", app_name="moxing", app_key="MOXING", proxy=True)
+        super(MoxingSign, self).__init__("https://moxing.app", app_name="moxing", app_key="MOXING", proxy=True)
         # 登录配置
         self.login_type = "login"
         # self.login_setting_code_type = "gif"
@@ -35,7 +35,13 @@ class MoxingSign(BaseSign):
         self.session.post(f"{url_v2}/api/forum/check-in/users", data={"page": 1})
         sign_info_resp = self.session.get(f"{url_v2}/forum/sign")
         token = sign_info_resp.cookies.get("XSRF-TOKEN")
-        resp = self.session.post(f"{url_v2}/api/forum/check-in/sign", data={}, headers={"X-XSRF-TOKEN": requests.utils.unquote(token), "X-Requested-With": "XMLHttpRequest"})
+        captcha_resp = self.session.get(f"{url_v2}/api/forum/captcha/generate")
+        if captcha_resp.status_code != 200:
+            self.pwl(f"获取验证码失败:{captcha_resp.text}")
+            return False
+        response_info = json.loads(captcha_resp.text)
+        # {key: "captcha_MeBJ5w0gcMUWMKcSEW9p6hWCqfRg4B4b", image: "JN4LC"}
+        resp = self.session.post(f"{url_v2}/api/forum/check-in/sign", data={"captcha": response_info.get("image"), "captcha_key": response_info.get("key")}, headers={"X-XSRF-TOKEN": requests.utils.unquote(token), "X-Requested-With": "XMLHttpRequest"})
         if resp.status_code == 200:
             response_info = json.loads(resp.text)
             success = response_info.get("success")
