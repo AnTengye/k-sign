@@ -3,6 +3,7 @@
 cron: 0 0 8 * * *
 new Env('vika签到');
 """
+import datetime
 import json
 
 from base import BaseSign
@@ -94,8 +95,23 @@ class VikaSign(BaseSign):
             basic = response_info.get("data").get("basic")
             credit = response_info.get("data").get("credit")
             self.pwl(f"用户信息：{basic.get('name')},积分：{credit.get('count')}")
-            if credit.get("sign_count") != 0:
-                self.is_sign = True
+            # 2. 检查 sign_time 是否有效 (不为 0 且不为 None)
+            sign_time = credit.get("sign_time")  # 先获取值
+            if sign_time and int(sign_time) != 0:
+                try:
+                    timestamp_int = int(sign_time)
+                    timestamp_sec = timestamp_int / 1000.0  # 除以 1000
+                    timestamp_date = datetime.datetime.fromtimestamp(timestamp_sec).date()
+                    today_date = datetime.date.today()
+                    self.pwl(f"签到时间戳: {timestamp_date}, 今天时间戳: {today_date}")
+                    self.is_sign = (timestamp_date == today_date)
+
+                except (ValueError, OSError) as e:
+                    # 如果时间戳格式还是有问题，捕获异常并打印
+                    self.pwl(f"处理签到时间戳出错: {e}, 原始值: {sign_time}")
+                    self.is_sign = False  # 出错也算未签到
+
+            # 6. 无论如何都会打印最终的正确状态
             self.pwl(f"签到状态:{self.is_sign}")
         else:
             self.pwl('获取用户信息失败' + response.text)
