@@ -67,6 +67,44 @@ class NewApiSign(BaseSign):
         return True
 
     def sign(self):
+        try:
+            resp = self.session.get(f"{self.base_url}/api/user/checkin")
+        except Exception as e:
+            self.pwl(f"签到状态请求失败: {e}")
+            return False
+        if resp.status_code != 200:
+            self.pwl(f"签到状态请求失败: HTTP {resp.status_code}")
+            return False
+        try:
+            data = resp.json()
+        except Exception:
+            self.pwl(f"签到状态解析失败: {resp.text}")
+            return False
+        if not data.get("success", False):
+            self.pwl(data.get("message", "获取签到状态失败"))
+            return False
+        stats = data.get("data", {}).get("stats", {})
+        if stats.get("checked_in_today"):
+            self.pwl("今日已签到")
+            return True
+
+        try:
+            resp = self.session.post(f"{self.base_url}/api/user/checkin")
+        except Exception as e:
+            self.pwl(f"签到请求失败: {e}")
+            return False
+        if resp.status_code != 200:
+            self.pwl(f"签到失败: HTTP {resp.status_code}")
+            return False
+        try:
+            data = resp.json()
+        except Exception:
+            self.pwl(f"签到解析失败: {resp.text}")
+            return False
+        if not data.get("success", False):
+            self.pwl(data.get("message", "签到失败"))
+            return False
+        self.pwl(data.get("message", "签到成功"))
         return True
 
 
