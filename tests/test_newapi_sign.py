@@ -102,6 +102,7 @@ class FakeSession:
     def __init__(self, responses):
         self._responses = list(responses)
         self.calls = []
+        self.headers = {}
 
     def get(self, url, **kwargs):
         self.calls.append(("get", url))
@@ -134,6 +135,15 @@ class NewApiSignTests(unittest.TestCase):
         s.pre()
         ok = s.login()
         self.assertFalse(ok)
+
+    def test_login_sets_new_api_user_header(self):
+        s = NewApiSign()
+        s.session = FakeSession([
+            FakeResponse(payload={"success": True, "data": {"id": 365}})
+        ])
+        ok = s.login()
+        self.assertTrue(ok)
+        self.assertEqual(s.session.headers.get("New-Api-User"), "365")
 
     def test_sign_returns_true_when_checked_in_today(self):
         s = NewApiSign()
