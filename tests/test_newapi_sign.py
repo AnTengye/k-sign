@@ -101,11 +101,14 @@ class FakeResponse:
 class FakeSession:
     def __init__(self, responses):
         self._responses = list(responses)
+        self.calls = []
 
     def get(self, url, **kwargs):
+        self.calls.append(("get", url))
         return self._responses.pop(0)
 
     def post(self, url, **kwargs):
+        self.calls.append(("post", url))
         return self._responses.pop(0)
 
 
@@ -131,6 +134,34 @@ class NewApiSignTests(unittest.TestCase):
         s.pre()
         ok = s.login()
         self.assertFalse(ok)
+
+    def test_sign_returns_true_when_checked_in_today(self):
+        s = NewApiSign()
+        s.session = FakeSession([
+            FakeResponse(payload={"success": True, "data": {"stats": {"checked_in_today": True}}})
+        ])
+        ok = s.sign()
+        self.assertTrue(ok)
+        self.assertEqual(
+            s.session.calls,
+            [("get", "https://example.com/api/user/checkin")],
+        )
+
+    def test_sign_posts_when_not_checked_in(self):
+        s = NewApiSign()
+        s.session = FakeSession([
+            FakeResponse(payload={"success": True, "data": {"stats": {"checked_in_today": False}}}),
+            FakeResponse(payload={"success": True, "message": "签到成功", "data": {"quota_awarded": 100}}),
+        ])
+        ok = s.sign()
+        self.assertTrue(ok)
+        self.assertEqual(
+            s.session.calls,
+            [
+                ("get", "https://example.com/api/user/checkin"),
+                ("post", "https://example.com/api/user/checkin"),
+            ],
+        )
 
 
 if __name__ == "__main__":
