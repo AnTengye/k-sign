@@ -64,6 +64,11 @@ class NewApiSign(BaseSign):
         if data.get("data", {}).get("require_2fa"):
             self.pwl("已启用 2FA，跳过登录")
             return False
+        user_id = data.get("data", {}).get("id")
+        if user_id is None:
+            self.pwl("登录返回缺少用户ID，无法设置 New-Api-User")
+            return False
+        self.session.headers.update({"New-Api-User": str(user_id)})
         return True
 
     def sign(self):
