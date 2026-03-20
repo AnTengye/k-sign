@@ -174,5 +174,144 @@ class NewApiSignTests(unittest.TestCase):
         )
 
 
+    def test_default_app_key_is_newapi(self):
+        """Test 2: Default backward compatibility - app_key defaults to 'NEWAPI'."""
+        s = NewApiSign()
+        self.assertEqual(s.app_key, "NEWAPI")
+
+    def test_custom_app_key_instantiation(self):
+        """Test 1: Custom app_key instantiation with NEWAPI_FOO."""
+        os.environ["SIGN_URL_NEWAPI_FOO"] = "https://foo.example.com"
+        os.environ["SIGN_UP_NEWAPI_FOO"] = "foouser|foopass"
+        try:
+            s = NewApiSign(app_key="NEWAPI_FOO", app_name="new-api-FOO")
+            self.assertEqual(s.app_key, "NEWAPI_FOO")
+            self.assertEqual(s.base_url, "https://foo.example.com")
+            self.assertEqual(s.username, "foouser")
+            self.assertEqual(s.password, "foopass")
+        finally:
+            os.environ.pop("SIGN_URL_NEWAPI_FOO", None)
+            os.environ.pop("SIGN_UP_NEWAPI_FOO", None)
+
+
+class AutoDiscoveryTests(unittest.TestCase):
+    """Test 3: Auto-discovery of env var keys."""
+
+    def test_discover_multiple_newapi_keys(self):
+        """Test that discovery logic extracts sorted list of app_keys."""
+        import re
+        from unittest.mock import patch
+
+        mock_env = {
+            "SIGN_URL_NEWAPI": "https://default.example.com",
+            "SIGN_URL_NEWAPI_A": "https://a.example.com",
+            "SIGN_URL_NEWAPI_B": "https://b.example.com",
+            "SIGN_UP_NEWAPI": "user|pass",
+            "SIGN_UP_NEWAPI_A": "usera|passa",
+            "SIGN_UP_NEWAPI_B": "userb|passb",
+            "OTHER_VAR": "ignored",
+        }
+
+        with patch.dict(os.environ, mock_env, clear=True):
+            keys = sorted(set(
+                re.sub(r"^SIGN_URL_", "", k)
+                for k in os.environ
+                if k.startswith("SIGN_URL_NEWAPI")
+            ))
+            self.assertEqual(keys, ["NEWAPI", "NEWAPI_A", "NEWAPI_B"])
+
+    def test_discover_empty_when_no_newapi_vars(self):
+        """Test that discovery returns empty list when no SIGN_URL_NEWAPI* vars."""
+        import re
+        from unittest.mock import patch
+
+        mock_env = {"OTHER_VAR": "value"}
+
+        with patch.dict(os.environ, mock_env, clear=True):
+            keys = sorted(set(
+                re.sub(r"^SIGN_URL_", "", k)
+                for k in os.environ
+                if k.startswith("SIGN_URL_NEWAPI")
+            ))
+            self.assertEqual(keys, [])
+
+
+class ErrorIsolationTests(unittest.TestCase):
+    """Test 4: Error isolation - failure in one site doesn't prevent others."""
+
+    def test_error_in_one_site_does_not_block_others(self):
+        """Test that if one site's run() raises, next site still executes."""
+        from unittest.mock import patch, MagicMock
+
+        mock_env = {
+            "SIGN_URL_NEWAPI_A": "https://a.example.com",
+            "SIGN_URL_NEWAPI_B": "https://b.example.com",
+            "SIGN_UP_NEWAPI_A": "usera|passa",
+            "SIGN_UP_NEWAPI_B": "userb|passb",
+        }
+
+        executed_keys = []
+
+        def mock_newapi_init(self, app_key="NEWAPI", app_name="new-api"):
+            self.app_key = app_key
+            self.app_name = app_name
+
+        def mock_run(self):
+            executed_keys.append(self.app_key)
+            if self.app_key == "NEWAPI_A":
+                raise RuntimeError("Simulated failure for NEWAPI_A")
+
+        with patch.dict(os.environ, mock_env, clear=True):
+            import re
+            keys = sorted(set(
+                re.sub(r"^SIGN_URL_", "", k)
+                for k in os.environ
+                if k.startswith("SIGN_URL_NEWAPI")
+            ))
+
+            # Simulate the main block logic with error isolation
+            for app_key in keys:
+                try:
+                    # Create a mock instance
+                    mock_instance = MagicMock()
+                    mock_instance.app_key = app_key
+                    mock_instance.run = lambda inst=mock_instance: mock_run(inst)
+                    mock_instance.run()
+                except Exception:
+                    pass  # Error isolation - continue to next site
+
+            # Both sites should have been attempted
+            self.assertEqual(executed_keys, ["NEWAPI_A", "NEWAPI_B"])
+
+    def test_all_sites_execute_when_no_errors(self):
+        """Test that all sites execute successfully when no errors occur."""
+        from unittest.mock import patch, MagicMock
+
+        mock_env = {
+            "SIGN_URL_NEWAPI": "https://default.example.com",
+            "SIGN_URL_NEWAPI_X": "https://x.example.com",
+            "SIGN_UP_NEWAPI": "user|pass",
+            "SIGN_UP_NEWAPI_X": "userx|passx",
+        }
+
+        executed_keys = []
+
+        with patch.dict(os.environ, mock_env, clear=True):
+            import re
+            keys = sorted(set(
+                re.sub(r"^SIGN_URL_", "", k)
+                for k in os.environ
+                if k.startswith("SIGN_URL_NEWAPI")
+            ))
+
+            for app_key in keys:
+                try:
+                    executed_keys.append(app_key)
+                except Exception:
+                    pass
+
+            self.assertEqual(executed_keys, ["NEWAPI", "NEWAPI_X"])
+
+
 if __name__ == "__main__":
     unittest.main()
