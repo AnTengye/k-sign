@@ -2,14 +2,22 @@
 """
 cron: 0 0 8 * * *
 new Env('new-api每日签到');
+
+Multi-site support via environment variable naming convention:
+  SIGN_URL_NEWAPI_<SUFFIX>  - Site URL (e.g. SIGN_URL_NEWAPI_A, SIGN_URL_NEWAPI_B)
+  SIGN_UP_NEWAPI_<SUFFIX>   - Username/password (e.g. SIGN_UP_NEWAPI_A)
+
+Backward compatible: plain SIGN_URL_NEWAPI / SIGN_UP_NEWAPI still works.
 """
+
+import os
 
 from base import BaseSign
 
 
 class NewApiSign(BaseSign):
-    def __init__(self):
-        super(NewApiSign, self).__init__("", app_name="new-api", app_key="NEWAPI")
+    def __init__(self, app_key="NEWAPI", app_name="new-api"):
+        super(NewApiSign, self).__init__("", app_name=app_name, app_key=app_key)
         self.login_type = "login"
         self.exec_method = ["sign"]
         self.skip_login = False
@@ -114,5 +122,18 @@ class NewApiSign(BaseSign):
 
 
 if __name__ == "__main__":
-    s = NewApiSign()
-    s.run()
+    import re
+    keys = sorted(set(
+        re.sub(r"^SIGN_URL_", "", k)
+        for k in os.environ
+        if k.startswith("SIGN_URL_NEWAPI")
+    ))
+    if not keys:
+        print("No SIGN_URL_NEWAPI* environment variables found")
+    for i, app_key in enumerate(keys, 1):
+        print(f"[{i}/{len(keys)}] Processing: {app_key}")
+        try:
+            s = NewApiSign(app_key=app_key, app_name=f"new-api-{app_key}")
+            s.run()
+        except Exception as e:
+            print(f"[{app_key}] Failed: {e}")
