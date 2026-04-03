@@ -6,23 +6,46 @@ new Env('new-api每日签到');
 Multi-site support via environment variable naming convention:
   SIGN_URL_NEWAPI_<SUFFIX>  - Site URL (e.g. SIGN_URL_NEWAPI_A, SIGN_URL_NEWAPI_B)
   SIGN_UP_NEWAPI_<SUFFIX>   - Username/password (e.g. SIGN_UP_NEWAPI_A)
+  SIGN_TOKENS_NEWAPI_<SUFFIX> - One user_id|token per line for token check-in
 
 Backward compatible: plain SIGN_URL_NEWAPI / SIGN_UP_NEWAPI still works.
 """
 
 import os
+import re
 
 from base import BaseSign
 
 
 class NewApiSign(BaseSign):
-    def __init__(self, app_key="NEWAPI", app_name="new-api"):
-        super(NewApiSign, self).__init__("", app_name=app_name, app_key=app_key)
+    def __init__(self, app_key="NEWAPI", app_name="new-api", token_entry=None):
+        if token_entry is None:
+            token_entries = collect_token_entries(app_key)
+            if len(token_entries) == 1:
+                token_entry = token_entries[0]
+        restore_up = None
+        if token_entry is not None:
+            env_key = f"SIGN_UP_{app_key}"
+            restore_up = os.environ.get(env_key)
+            if restore_up is None:
+                os.environ[env_key] = "token-user|token-auth"
+        try:
+            super(NewApiSign, self).__init__("", app_name=app_name, app_key=app_key)
+        finally:
+            if token_entry is not None:
+                env_key = f"SIGN_UP_{app_key}"
+                if restore_up is None:
+                    os.environ.pop(env_key, None)
+                else:
+                    os.environ[env_key] = restore_up
         self.login_type = "login"
         self.exec_method = ["sign"]
         self.skip_login = False
+        self.token_entry = token_entry
 
     def pre(self):
+        if self.token_entry is not None:
+            return
         status = self._get_status()
         if status is None:
             return
@@ -50,6 +73,13 @@ class NewApiSign(BaseSign):
             return None
 
     def _login(self):
+        if self.token_entry is not None:
+            user_id, token = self.token_entry
+            self.session.headers.update({
+                "Authorization": f"Bearer {token}",
+                "New-Api-User": str(user_id),
+            })
+            return True
         if self.skip_login:
             return False
         payload = {"username": self.username, "password": self.password}
@@ -121,19 +151,56 @@ class NewApiSign(BaseSign):
         return True
 
 
-if __name__ == "__main__":
-    import re
-    keys = sorted(set(
-        re.sub(r"^SIGN_URL_", "", k)
-        for k in os.environ
-        if k.startswith("SIGN_URL_NEWAPI")
+def collect_token_entries(app_key):
+    raw_value = os.getenv(f"SIGN_TOKENS_{app_key}", "")
+    entries = []
+    for index, line in enumerate(raw_value.splitlines(), 1):
+        value = line.strip()
+        if not value:
+            continue
+        parts = value.split("|", 1)
+        if len(parts) != 2 or not parts[0].strip() or not parts[1].strip():
+            raise ValueError(f"SIGN_TOKENS_{app_key} 第 {index} 行格式无效，应为 user_id|token")
+        entries.append((parts[0].strip(), parts[1].strip()))
+    return entries
+
+
+def discover_app_keys():
+    return sorted(set(
+        re.sub(r"^SIGN_URL_", "", key)
+        for key in os.environ
+        if key.startswith("SIGN_URL_NEWAPI")
     ))
+
+
+def run_site(app_key):
+    token_entries = collect_token_entries(app_key)
+    if token_entries:
+        for index, token_entry in enumerate(token_entries, 1):
+            user_id, _ = token_entry
+            print(f"[{app_key}] Token {index}/{len(token_entries)} user_id={user_id}")
+            try:
+                signer = NewApiSign(
+                    app_key=app_key,
+                    app_name=f"new-api-{app_key}-{user_id}",
+                    token_entry=token_entry,
+                )
+                signer.run()
+            except Exception as e:
+                print(f"[{app_key}] Token user_id={user_id} failed: {e}")
+        return
+
+    signer = NewApiSign(app_key=app_key, app_name=f"new-api-{app_key}")
+    signer.run()
+
+
+if __name__ == "__main__":
+    keys = discover_app_keys()
     if not keys:
         print("No SIGN_URL_NEWAPI* environment variables found")
     for i, app_key in enumerate(keys, 1):
         print(f"[{i}/{len(keys)}] Processing: {app_key}")
         try:
-            s = NewApiSign(app_key=app_key, app_name=f"new-api-{app_key}")
-            s.run()
+            run_site(app_key)
         except Exception as e:
             print(f"[{app_key}] Failed: {e}")
