@@ -4,6 +4,8 @@ cron: 0 0 0 * * *
 new Env('司机社签到');
 """
 
+import os
+
 from base import BaseSign
 
 
@@ -11,7 +13,7 @@ class SiJiSSign(BaseSign):
     def __init__(self):
         super(SiJiSSign, self).__init__("https://sjs47.me", app_name="司机社", app_key="SJS", proxy=True)
         self.retry_times = 3
-        self.login_type = "login_code"
+        self.login_type = "login_cookie" if os.getenv("SIGN_COOKIE_SJS") else "login_code"
         self.login_resp_success = r"succeedhandle_login\('(.*?)'"
         self.login_resp_error = r'errorhandle_login\((.*?),'
         self.login_page_path = "member.php?mod=logging&action=login&infloat=yes&handlekey=login&inajax=1&ajaxtarget=fwin_content_login"

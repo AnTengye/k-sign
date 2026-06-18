@@ -93,4 +93,4 @@ run() → _exec()
 - 不要修改 `base.py`、`notify.py`、`gifcode.py` 等核心模块，除非有明确需求
 - `expired/` 目录存放已失效脚本，仅作参考
 - `djgame_cd.onnx` 和 `djgame_char.json` 是 `djgame.py` 专用的验证码模型文件
-- 青龙面板拉库命令会自动排除 `onnx|json|base|notify|gifcode` 等核心文件
+- 青龙面板拉库命令会自动排除 `onnx|json|base|notify|gifcode|tools|expired|slidecode|test` 等核心/测试/失效文件

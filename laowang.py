@@ -4,6 +4,7 @@ cron: 0 0 8 * * *
 new Env('老王论坛签到');
 """
 import base64
+import os
 import time
 
 from scrapy import Selector
@@ -17,7 +18,7 @@ class LaoWangSSign(BaseSign):
     def __init__(self):
         super(LaoWangSSign, self).__init__("https://laowang.vip", app_name="老王论坛", app_key="LW", proxy=True)
         self.retry_times = 3
-        self.login_type = "login"
+        self.login_type = "login_cookie" if os.getenv("SIGN_COOKIE_LW") else "login"
         # 随机生成一个t
         self.login_t = str(round(time.time()))
         # 支持的方法
@@ -45,6 +46,9 @@ class LaoWangSSign(BaseSign):
         
 
     def login(self) -> bool:
+        if self.login_type == "login_cookie":
+            return self._cookie_login()
+        self.session.cookies.set("is_agree", "1", domain=self.url_info.hostname, path="/")
         self.session.get(f"{self.base_url}/home.php?mod=space&do=pm")
         # 访问页面
         token = self.fetch_index()
