@@ -1,14 +1,12 @@
 # -*- coding:utf-8 -*-
 """
-cron: 0 0 8 * * *
+cron: 0 10 8 * * *
 new Env('hostloc签到');
 """
 import random
 import re
 import textwrap
 import time
-
-import requests
 
 from base import BaseSign
 from pyaes import AESModeOfOperationCBC
@@ -27,16 +25,16 @@ class HostlocSign(BaseSign):
         res = self.session.get(f"{self.base_url}/forum.php")
         res.raise_for_status()
         res.encoding = "utf-8"
-        points = re.findall("积分: (\d+)", res.text)
+        points = re.findall(r"积分: (\d+)", res.text)
 
         if len(points) != 0:  # 确保正则匹配到了内容，防止出现数组索引越界的情况
             self.pwl("帐户当前积分：" + points[0])
+            return True
         else:
             self.pwl("无法获取帐户积分，可能页面存在错误或者未登录！")
-        time.sleep(5)
-
+            return False
     def get_info(self):
-        self.print_current_points()  # 打印帐户当前积分
+        before_ok = self.print_current_points()  # 打印帐户当前积分
         url_list = self.randomly_gen_uspace_url()
         # 依次访问用户空间链接获取积分，出现错误时不中断程序继续尝试访问下一个链接
         success = 0
@@ -46,12 +44,14 @@ class HostlocSign(BaseSign):
                 res = self.session.get(url)
                 res.raise_for_status()
                 time.sleep(5)  # 每访问一个链接后休眠5秒，以避免触发论坛的防CC机制
-                success += 1
+                if "用户不存在" not in res.text and "指定的用户不存在" not in res.text:
+                    success += 1
             except Exception as e:
                 self.pwl("链接访问异常：" + str(e))
             continue
         self.pwl(f"用户空间链接访问成功数:{success}")
-        self.print_current_points()  # 再次打印帐户当前积分
+        after_ok = self.print_current_points()  # 再次打印帐户当前积分
+        return before_ok and after_ok and success > 0
 
     # 随机生成用户空间链接
     def randomly_gen_uspace_url(self) -> list:
@@ -77,8 +77,8 @@ class HostlocSign(BaseSign):
             "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.88 Safari/537.36"
         }
         home_page = f"{self.base_url}/forum.php"
-        res = requests.get(home_page, headers=headers)
-        aes_keys = re.findall('toNumbers\("(.*?)"\)', res.text)
+        res = self.session.get(home_page, headers=headers)
+        aes_keys = re.findall(r'toNumbers\("(.*?)"\)', res.text)
         cookie_name = re.findall('cookie="(.*?)="', res.text)
 
         if len(aes_keys) != 0:  # 开启了防CC机制

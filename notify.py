@@ -12,6 +12,8 @@ import urllib.parse
 
 import requests
 
+REQUEST_TIMEOUT = 15
+
 # 原先的 print 函数和主线程的锁
 _print = print
 mutex = threading.Lock()
@@ -86,7 +88,15 @@ notify_function = []
 for k in push_config:
     if os.getenv(k):
         v = os.getenv(k)
-        push_config[k] = v
+        if isinstance(push_config[k], bool):
+            push_config[k] = v.strip().lower() in {"1", "true", "yes", "on"}
+        else:
+            push_config[k] = v
+
+
+def http_request(method, url=None, *args, **kwargs):
+    kwargs.setdefault("timeout", REQUEST_TIMEOUT)
+    return requests.request(method, url, *args, **kwargs)
 
 
 def bark(title: str, content: str) -> None:
@@ -120,7 +130,7 @@ def bark(title: str, content: str) -> None:
         params += f"{bark_params.get(pair[0])}={pair[1]}&"
     if params:
         url = url + "?" + params.rstrip("&")
-    response = requests.get(url).json()
+    response = http_request("get", url).json()
 
     if response["code"] == 200:
         print("bark 推送成功！")
@@ -155,7 +165,7 @@ def dingding_bot(title: str, content: str) -> None:
     url = f'https://oapi.dingtalk.com/robot/send?access_token={push_config.get("DD_BOT_TOKEN")}&timestamp={timestamp}&sign={sign}'
     headers = {"Content-Type": "application/json;charset=utf-8"}
     data = {"msgtype": "text", "text": {"content": f"{title}\n\n{content}"}}
-    response = requests.post(
+    response = http_request("post",
         url=url, data=json.dumps(data), headers=headers, timeout=15
     ).json()
 
@@ -176,7 +186,7 @@ def feishu_bot(title: str, content: str) -> None:
 
     url = f'https://open.feishu.cn/open-apis/bot/v2/hook/{push_config.get("FSKEY")}'
     data = {"msg_type": "text", "content": {"text": f"{title}\n\n{content}"}}
-    response = requests.post(url, data=json.dumps(data)).json()
+    response = http_request("post", url, data=json.dumps(data)).json()
 
     if response.get("StatusCode") == 0:
         print("飞书 推送成功！")
@@ -194,7 +204,7 @@ def go_cqhttp(title: str, content: str) -> None:
     print("go-cqhttp 服务启动")
 
     url = f'{push_config.get("GOBOT_URL")}?access_token={push_config.get("GOBOT_TOKEN")}&{push_config.get("GOBOT_QQ")}&message=标题:{title}\n内容:{content}'
-    response = requests.get(url).json()
+    response = http_request("get", url).json()
 
     if response["status"] == "ok":
         print("go-cqhttp 推送成功！")
@@ -213,7 +223,7 @@ def gotify(title: str, content: str) -> None:
 
     url = f'{push_config.get("GOTIFY_URL")}/message?token={push_config.get("GOTIFY_TOKEN")}'
     data = {"title": title, "message": content, "priority": push_config.get("GOTIFY_PRIORITY")}
-    response = requests.post(url, data=data).json()
+    response = http_request("post", url, data=data).json()
 
     if response.get("id"):
         print("gotify 推送成功！")
@@ -233,7 +243,7 @@ def iGot(title: str, content: str) -> None:
     url = f'https://push.hellyw.com/{push_config.get("IGOT_PUSH_KEY")}'
     data = {"title": title, "content": content}
     headers = {"Content-Type": "application/x-www-form-urlencoded"}
-    response = requests.post(url, data=data, headers=headers).json()
+    response = http_request("post", url, data=data, headers=headers).json()
 
     if response["ret"] == 0:
         print("iGot 推送成功！")
@@ -255,7 +265,7 @@ def serverJ(title: str, content: str) -> None:
         url = f'https://sctapi.ftqq.com/{push_config.get("PUSH_KEY")}.send'
     else:
         url = f'https://sc.ftqq.com/${push_config.get("PUSH_KEY")}.send'
-    response = requests.post(url, data=data).json()
+    response = http_request("post", url, data=data).json()
 
     if response.get("errno") == 0 or response.get("code") == 0:
         print("serverJ 推送成功！")
@@ -273,7 +283,7 @@ def pushdeer(title: str, content: str) -> None:
     print("PushDeer 服务启动")
     data = {"text": title, "desp": content, "type": "markdown", "pushkey": push_config.get("DEER_KEY")}
     url = 'https://api2.pushdeer.com/message/push'
-    response = requests.post(url, data=data).json()
+    response = http_request("post", url, data=data).json()
 
     if len(response.get("content").get("result")) > 0:
         print("PushDeer 推送成功！")
@@ -299,7 +309,7 @@ def pushplus_bot(title: str, content: str) -> None:
     }
     body = json.dumps(data).encode(encoding="utf-8")
     headers = {"Content-Type": "application/json"}
-    response = requests.post(url=url, data=body, headers=headers).json()
+    response = http_request("post", url=url, data=body, headers=headers).json()
 
     if response["code"] == 200:
         print("PUSHPLUS 推送成功！")
@@ -308,7 +318,7 @@ def pushplus_bot(title: str, content: str) -> None:
 
         url_old = "http://pushplus.hxtrip.com/send"
         headers["Accept"] = "application/json"
-        response = requests.post(url=url_old, data=body, headers=headers).json()
+        response = http_request("post", url=url_old, data=body, headers=headers).json()
 
         if response["code"] == 200:
             print("PUSHPLUS(hxtrip) 推送成功！")
@@ -328,7 +338,7 @@ def qmsg_bot(title: str, content: str) -> None:
 
     url = f'https://qmsg.zendee.cn/{push_config.get("QMSG_TYPE")}/{push_config.get("QMSG_KEY")}'
     payload = {"msg": f'{title}\n\n{content.replace("----", "-")}'.encode("utf-8")}
-    response = requests.post(url=url, params=payload).json()
+    response = http_request("post", url=url, params=payload).json()
 
     if response["code"] == 0:
         print("qmsg 推送成功！")
@@ -383,7 +393,7 @@ class WeCom:
             "corpid": self.CORPID,
             "corpsecret": self.CORPSECRET,
         }
-        req = requests.post(url, params=values)
+        req = http_request("post", url, params=values)
         data = json.loads(req.text)
         return data["access_token"]
 
@@ -400,7 +410,7 @@ class WeCom:
             "safe": "0",
         }
         send_msges = bytes(json.dumps(send_values), "utf-8")
-        respone = requests.post(send_url, send_msges)
+        respone = http_request("post", send_url, send_msges)
         respone = respone.json()
         return respone["errmsg"]
 
@@ -427,7 +437,7 @@ class WeCom:
             },
         }
         send_msges = bytes(json.dumps(send_values), "utf-8")
-        respone = requests.post(send_url, send_msges)
+        respone = http_request("post", send_url, send_msges)
         respone = respone.json()
         return respone["errmsg"]
 
@@ -444,7 +454,7 @@ def wecom_bot(title: str, content: str) -> None:
     url = f"https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key={push_config.get('QYWX_KEY')}"
     headers = {"Content-Type": "application/json;charset=utf-8"}
     data = {"msgtype": "text", "text": {"content": f"{title}\n\n{content}"}}
-    response = requests.post(
+    response = http_request("post",
         url=url, data=json.dumps(data), headers=headers, timeout=15
     ).json()
 
@@ -489,7 +499,7 @@ def telegram_bot(title: str, content: str) -> None:
             push_config.get("TG_PROXY_HOST"), push_config.get("TG_PROXY_PORT")
         )
         proxies = {"http": proxyStr, "https": proxyStr}
-    response = requests.post(
+    response = http_request("post",
         url=url, headers=headers, params=payload, proxies=proxies
     ).json()
 
@@ -505,7 +515,7 @@ def one() -> str:
     :return:
     """
     url = "https://v1.hitokoto.cn/"
-    res = requests.get(url).json()
+    res = http_request("get", url).json()
     return res["hitokoto"] + "    ----" + res["from"]
 
 
@@ -546,15 +556,26 @@ def send(title: str, content: str) -> None:
 
     hitokoto = push_config.get("HITOKOTO")
 
-    text = one() if hitokoto else ""
+    try:
+        text = one() if hitokoto else ""
+    except Exception as exc:
+        print(f"一言获取失败: {exc}")
+        text = ""
     content += "\n\n" + text
 
-    ts = [
-        threading.Thread(target=mode, args=(title, content), name=mode.__name__)
-        for mode in notify_function
-    ]
+    def safe_send(mode):
+        try:
+            mode(title, content)
+        except Exception as exc:
+            print(f"{mode.__name__} 推送失败: {exc}")
+
+    ts = [threading.Thread(target=safe_send, args=(mode,), name=mode.__name__, daemon=True)
+          for mode in notify_function]
     [t.start() for t in ts]
-    [t.join() for t in ts]
+    [t.join(REQUEST_TIMEOUT + 2) for t in ts]
+    for thread in ts:
+        if thread.is_alive():
+            print(f"{thread.name} 推送超时")
 
 
 def main():

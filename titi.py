@@ -1,6 +1,6 @@
 # -*- coding:utf-8 -*-
 """
-cron: 0 0 8 * * *
+cron: 0 2 8 * * *
 new Env('titi签到');
 """
 import json

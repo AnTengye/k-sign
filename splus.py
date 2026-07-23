@@ -19,6 +19,7 @@ class SouthPlusSign(BaseSign):
         # 支持的方法
         self.exec_method = ["sign"]
         self.retry_times = 10
+        self.task_verify = ""
 
     def fetch_index(self):
         url = f"{self.base_url}/login.php"
@@ -159,10 +160,17 @@ class SouthPlusSign(BaseSign):
             'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36'
         }
 
-        self.session.get(url, headers=headers, data=payload)
+        response = self.session.get(url, headers=headers, data=payload)
+        verify_values = re.findall(r"[?&]verify=([\w-]+)", response.text)
+        if not verify_values:
+            self.pwl("获取任务 verify 参数失败")
+            return False
+        self.task_verify = verify_values[0]
+        return True
 
     def sign(self) -> bool:
-        self.fetch_sign()
+        if not self.fetch_sign():
+            return False
         if self.apply_task(14):
             self.confirm_task(14)
         self.apply_task(15)
@@ -171,7 +179,7 @@ class SouthPlusSign(BaseSign):
 
     def apply_task(self, task_id) -> bool:
         now_time = self.get_now()
-        url = f"{self.base_url}/plugin.php?H_name=tasks&action=ajax&actions=job&cid={task_id}&nowtime={now_time}&verify=22594798"
+        url = f"{self.base_url}/plugin.php?H_name=tasks&action=ajax&actions=job&cid={task_id}&nowtime={now_time}&verify={self.task_verify}"
 
         payload = {}
         headers = {
@@ -203,7 +211,7 @@ class SouthPlusSign(BaseSign):
 
     def confirm_task(self, task_id) -> bool:
         now_time = self.get_now()
-        url = f"{self.base_url}/plugin.php?H_name=tasks&action=ajax&actions=job2&cid={task_id}&nowtime={now_time}&verify=22594798"
+        url = f"{self.base_url}/plugin.php?H_name=tasks&action=ajax&actions=job2&cid={task_id}&nowtime={now_time}&verify={self.task_verify}"
 
         payload = {}
         headers = {

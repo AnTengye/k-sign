@@ -57,8 +57,8 @@ class SiteRepairTests(unittest.TestCase):
 
             self.assertTrue(signer.login())
             login_payload = signer.session.posts[-1][1]
-            self.assertIn("captcha_code=ABCD", login_payload)
-            self.assertIn("nonce=nonce123", login_payload)
+            self.assertEqual("ABCD", login_payload["captcha_code"])
+            self.assertEqual("nonce123", login_payload["nonce"])
         finally:
             miaocy.Selector = original_selector
             if original_handle_yzm is not None:
@@ -101,10 +101,10 @@ class SiteRepairTests(unittest.TestCase):
         signer.pwl = lambda msg: None
 
         response = FakeResponse(status_code=200, text="<script>var safeid='SAFE,123'</script>")
-        result = signer.pass_safe_challenge(response, "https://www.epl80.net/2048/login.php?")
+        result = signer.pass_safe_challenge(response, "https://www.epl80.net/login.php?")
 
         self.assertIn("verifyhash", result.text)
-        self.assertEqual("https://www.epl80.net/2048/login.php?", signer.session.retried[0])
+        self.assertEqual("https://www.epl80.net/login.php?", signer.session.retried[0])
         self.assertEqual(("_safe", "SAFE,123"), signer.session.cookies.values[0][0][:2])
 
     def test_ljd_target_url_uses_site_root_after_redirect(self):
@@ -118,32 +118,89 @@ class SiteRepairTests(unittest.TestCase):
             signer.build_read_url("123"),
         )
 
+    def test_ljd_sign_uses_site_root(self):
+        import ljd
+
+        class FakeSession:
+            def __init__(self):
+                self.gets = []
+                self.posts = []
+
+            def get(self, url, **kwargs):
+                self.gets.append(url)
+                return FakeResponse(status_code=200, text="")
+
+            def post(self, url, **kwargs):
+                self.posts.append(url)
+                return FakeResponse(status_code=200, text="签到成功")
+
+        class FakeSelector:
+            def __init__(self, response=None, **kwargs):
+                pass
+
+            def re(self, pattern):
+                return ["签到成功"]
+
+        signer = ljd.LJDSign.__new__(ljd.LJDSign)
+        signer.base_url = "https://www.epl80.net"
+        signer.session = FakeSession()
+        signer.pwl = lambda msg: None
+        original_selector = ljd.Selector
+        ljd.Selector = FakeSelector
+        try:
+            self.assertTrue(signer.sign())
+        finally:
+            ljd.Selector = original_selector
+        self.assertEqual("https://www.epl80.net/hack.php?H_name=qiandao", signer.session.gets[0])
+        self.assertNotIn("/2048/", signer.session.posts[0])
+
     def test_ljd_extracts_dynamic_reply_form_fields(self):
         import ljd
-        import lxml.html
 
         class XPathList(list):
             def extract_first(self, default=None):
                 if not self:
                     return default
-                value = self[0]
-                if isinstance(value, HtmlNode):
-                    return value.node.text_content()
-                return value
+                return self[0]
 
-        class HtmlNode:
-            def __init__(self, node):
-                self.node = node
+        class FakeInput:
+            def __init__(self, name, value):
+                self.name = name
+                self.value = value
 
             def xpath(self, expr):
-                return XPathList(
-                    HtmlNode(item) if hasattr(item, "xpath") else item
-                    for item in self.node.xpath(expr)
-                )
+                if expr == "@name":
+                    return XPathList([self.name])
+                if expr == "@value":
+                    return XPathList([self.value])
+                return XPathList()
 
-        class HtmlSelector(HtmlNode):
+        class FakeForm:
+            fields = {
+                "atc_usesign": "1",
+                "action": "reply",
+                "fid": "57",
+                "tid": "268",
+                "verify": "dynverify",
+                "_hexie": "dynhexie",
+                "one_sess": "1",
+            }
+
+            def xpath(self, expr):
+                if expr == "@action":
+                    return XPathList(["post.php?"])
+                if expr == './/input[@name]':
+                    return XPathList(FakeInput(name, value) for name, value in self.fields.items())
+                return XPathList()
+
+        class HtmlSelector:
             def __init__(self, text):
-                super().__init__(lxml.html.fromstring(text))
+                self.text = text
+
+            def xpath(self, expr):
+                if expr.startswith("//form"):
+                    return XPathList([FakeForm()])
+                return XPathList()
 
         html = """
         <form name="FORM" action="post.php?">
@@ -194,6 +251,65 @@ class SiteRepairTests(unittest.TestCase):
         finally:
             os.environ.pop("SIGN_UP_LW", None)
             os.environ.pop("SIGN_COOKIE_LW", None)
+
+    def test_vika_sign_uses_single_slash_api_path(self):
+        import vika
+
+        class FakeSession:
+            def __init__(self):
+                self.urls = []
+
+            def post(self, url, **kwargs):
+                self.urls.append(url)
+                return FakeResponse(
+                    status_code=200,
+                    payload={"code": 200, "data": {"count": 10, "sign_count": 1}},
+                    text=json.dumps({"code": 200, "data": {"count": 10, "sign_count": 1}}),
+                )
+
+        signer = vika.VikaSign.__new__(vika.VikaSign)
+        signer.base_url = "https://www.vikacg.com"
+        signer.sign_path = "api/vikacg/v1/userMission"
+        signer.is_sign = False
+        signer.url_info = types.SimpleNamespace(hostname="www.vikacg.com")
+        signer.session = FakeSession()
+        signer.pwl = lambda msg: None
+        self.assertTrue(signer.sign())
+        self.assertEqual(
+            "https://www.vikacg.com/api/vikacg/v1/userMission",
+            signer.session.urls[0],
+        )
+
+    def test_yyg_resolves_anti_cc_redirect(self):
+        import yyg
+
+        challenge = (
+            "<html id='anticc_redirect'><script>var cbk_var='';"
+            "cbk_var='b'+cbk_var;cbk_var='a'+cbk_var;</script></html>"
+        )
+
+        class FakeSession:
+            def __init__(self):
+                self.urls = []
+                self.requests = []
+
+            def get(self, url, **kwargs):
+                self.urls.append(url)
+                self.requests.append(kwargs)
+                if len(self.urls) == 1:
+                    return FakeResponse(text=challenge, url="https://yyg.app/captcha")
+                return FakeResponse(text="{}", payload={}, url=url)
+
+        signer = yyg.YYGSign.__new__(yyg.YYGSign)
+        signer.session = FakeSession()
+        signer.pwl = lambda msg: None
+        response = signer._get_with_anti_cc("https://yyg.app/captcha")
+        self.assertEqual("{}", response.text)
+        self.assertEqual("https://yyg.app/ab", signer.session.urls[1])
+        self.assertEqual(
+            "https://yyg.app/captcha",
+            signer.session.requests[1]["headers"]["Referer"],
+        )
 
 
 if __name__ == "__main__":

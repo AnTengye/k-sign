@@ -1,10 +1,12 @@
 # -*- coding:utf-8 -*-
 """
-cron: 0 0 8 * * *
+cron: 0 16 8 * * *
 new Env('嘤嘤怪签到');
 """
 
 import json
+import re
+from urllib.parse import urljoin
 
 from base import BaseSign
 from gifcode import handle_yzm
@@ -12,19 +14,25 @@ from gifcode import handle_yzm
 
 class YYGSign(BaseSign):
     def __init__(self):
-        super(YYGSign, self).__init__("https://yyg.one", app_name="嘤嘤怪之家", app_key="YYG")
+        super(YYGSign, self).__init__("https://yyg.app", app_name="嘤嘤怪之家", app_key="YYG")
         # 登录配置
         self.login_type = "login"
         # 支持的方法
         self.exec_method = ["sign"]
     def login(self) -> bool:
-        self.session.get(self.base_url)
+        self._get_with_anti_cc(self.base_url)
         code = self.code()
         if code == "":
             self.pwl("验证码无法识别")
             return False
         url = f"{self.base_url}/wp-admin/admin-ajax.php"
-        payload = f'username={self.username}&password={self.password}&canvas_yz={code}&remember=forever&action=user_signin'
+        payload = {
+            "username": self.username,
+            "password": self.password,
+            "canvas_yz": code,
+            "remember": "forever",
+            "action": "user_signin",
+        }
         headers = {
             'authority': self.url_info.hostname,
             'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
@@ -46,7 +54,11 @@ class YYGSign(BaseSign):
         }
         response = self.session.post(url, headers=headers, data=payload)
         if response.status_code == 200:
-            response_info = json.loads(response.text)
+            try:
+                response_info = response.json()
+            except ValueError:
+                self.pwl("登录响应不是有效 JSON，可能仍被防 CC 页面拦截")
+                return False
             score = response_info.get("error")
             if score:
                 self.pwl(f"登录失败:{response.text}")
@@ -82,23 +94,45 @@ class YYGSign(BaseSign):
             'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36'
         }
 
-        response = self.session.get(url, headers=headers, data=payload)
+        response = self._get_with_anti_cc(url, headers=headers, data=payload)
 
         if response.status_code != 200:
             return ""
-        img_data = json.loads(response.text)
+        try:
+            img_data = response.json()
+        except ValueError:
+            self.pwl("验证码响应不是有效 JSON，可能仍被防 CC 页面拦截")
+            return ""
         img_str = img_data.get("img")
-        if img_str != "":
-            _, content = img_str.split(",")
+        if img_str and "," in img_str:
+            _, content = img_str.split(",", 1)
             result = handle_yzm(content, t=self.login_setting_code_type)
             if self.check_code(result):
                 return result
             return self.code(retry-1)
         return ""
+
+    def _get_with_anti_cc(self, url, **kwargs):
+        response = self.session.get(url, **kwargs)
+        for _ in range(2):
+            if "anticc_redirect" not in response.text:
+                break
+            parts = re.findall(r"cbk_var\s*=\s*'([^']*)'\s*\+\s*cbk_var", response.text)
+            if not parts:
+                break
+            challenge_url = urljoin(response.url, "".join(reversed(parts)))
+            self.pwl("检测到防 CC 页面，自动完成跳转")
+            # 浏览器执行 window.location 时会携带当前挑战页作为 Referer，
+            # 服务端以此校验 __CBK；沿用业务页 Referer 会不断返回新挑战。
+            challenge_headers = dict(kwargs.get("headers") or {})
+            challenge_headers["Referer"] = response.url
+            response = self.session.get(challenge_url, headers=challenge_headers)
+        return response
+
     def sign(self) -> bool:
         url = f"{self.base_url}/wp-admin/admin-ajax.php"
 
-        payload = 'action=user_checkin'
+        payload = {"action": "user_checkin"}
         headers = {
             'authority': self.url_info.hostname,
             'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
@@ -121,7 +155,11 @@ class YYGSign(BaseSign):
 
         response = self.session.post(url, headers=headers, data=payload)
         if response.status_code == 200:
-            response_info = json.loads(response.text)
+            try:
+                response_info = response.json()
+            except ValueError:
+                self.pwl("签到响应不是有效 JSON")
+                return False
             score = response_info.get("error")
             if score:
                 self.pwl(f"签到失败:{response.text}")

@@ -3,7 +3,7 @@
 cron: 0 0 20 * * *
 new Env('2djgame签到');
 """
-from urllib.parse import quote
+from pathlib import Path
 
 from scrapy import Selector
 
@@ -12,8 +12,9 @@ from base import BaseSign
 
 
 class DJGameSign(BaseSign):
-    char = "djgame_char.json"
-    onnx = "djgame_cd.onnx"
+    asset_dir = Path(__file__).resolve().parent
+    char = str(asset_dir / "djgame_char.json")
+    onnx = str(asset_dir / "djgame_cd.onnx")
 
     def __init__(self):
         super(DJGameSign, self).__init__("https://bbs4.2djgame.net/home", app_name="2djgame", app_key="2DJ",
@@ -23,6 +24,9 @@ class DJGameSign(BaseSign):
 
     def login(self) -> bool:
         response = self.session.get(f"{self.base_url}/member.php?mod=logging&action=login")
+        if "Database Error" in response.text or "notconnect" in response.text:
+            self.pwl("站点数据库连接失败")
+            return False
         selector = Selector(response=response)
         form_hash = selector.xpath('//*[@id="scbar_form"]/input[2]/@value').extract_first("")
         sec_data = selector.re(r"updateseccode\('(\w*?)'")
@@ -34,7 +38,18 @@ class DJGameSign(BaseSign):
             if not verify_code:
                 return False
             url = f"{self.base_url}/member.php?mod=logging&action=login&loginsubmit=yes&loginhash=LzZ1M&inajax=1"
-            payload = f'formhash={form_hash}&referer={quote(self.base_url, safe="")}%2F.%2F&loginfield=username&username={self.username}&password={self.password}&questionid=0&answer=&sechash={sec_hash}&seccodeverify={verify_code}&cookietime=2592000'
+            payload = {
+                "formhash": form_hash,
+                "referer": f"{self.base_url}/./",
+                "loginfield": "username",
+                "username": self.username,
+                "password": self.password,
+                "questionid": "0",
+                "answer": "",
+                "sechash": sec_hash,
+                "seccodeverify": verify_code,
+                "cookietime": "2592000",
+            }
             headers = {
                 'authority': self.url_info.hostname,
                 'accept': 'application/json, text/plain, */*',
@@ -59,16 +74,18 @@ class DJGameSign(BaseSign):
             if len(jump_src) == 0:
                 result = result_selector.re(r'errorhandle_\((.*?),')
                 if len(result) > 0:
-                    print(result[0])
+                    self.pwl(result[0])
                 return False
             else:
                 self.session.get(jump_src[0])
-                print(f'登录成功')
+                self.pwl('登录成功')
             return True
+        self.pwl("登录页面缺少 formhash 或验证码参数")
+        return False
 
     def code(self, sec_hash, times=3) -> str:
         if times == 0:
-            print("错误次数过多")
+            self.pwl("错误次数过多")
             return ""
         headers = {
             'authority': self.url_info.hostname,
@@ -134,11 +151,11 @@ class DJGameSign(BaseSign):
                 if len(is_success) != 0:
                     return result
                 else:
-                    print(f"校验失败：{check_response.text}")
+                    self.pwl(f"校验失败：{check_response.text}")
                     return self.code(sec_hash, times - 1)
             return self.code(sec_hash, times - 1)
         else:
-            print(f"not found code url:{response.text}")
+            self.pwl("未找到验证码图片地址")
         return ""
 
     def sign(self) -> bool:
@@ -147,8 +164,9 @@ class DJGameSign(BaseSign):
             "5": "神之手",
             "1": "每日签到",
         }
+        daily_result = False
         for k, v in sign_list.items():
-            print(f"{v} 开始")
+            self.pwl(f"{v} 开始")
             url = f"{self.base_url}/home.php?mod=task&do=apply&id={k}"
             payload = {}
             headers = {
@@ -172,7 +190,15 @@ class DJGameSign(BaseSign):
             selector = Selector(response=response)
             result = selector.xpath('//*[@id="messagetext"]/p[1]/text()').extract_first()
             self.pwl(f"{v} 结果：{result}")
-        return True
+            if k == "1":
+                daily_result = self._task_succeeded(result)
+        return daily_result
+
+    @staticmethod
+    def _task_succeeded(message) -> bool:
+        if not message:
+            return False
+        return any(text in message for text in ("成功", "完成", "已经", "已申请", "已领取"))
 
 
 if __name__ == "__main__":

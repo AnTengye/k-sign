@@ -11,7 +11,12 @@ from base import BaseSign
 class AkileSign(BaseSign):
     def __init__(self):
         super(AkileSign, self).__init__("https://api.akile.io", app_name="akile", app_key="AKILE")
+        base_session = self.session
         self.session = requests.Session(impersonate="chrome101")
+        self.session.headers.update(base_session.headers)
+        self.session.proxies.update(base_session.proxies)
+        self.session.verify = base_session.verify
+        self.request_timeout = 10
         # 登录配置
         self.login_type = "login"
         # 支持的方法
@@ -42,7 +47,7 @@ class AkileSign(BaseSign):
             'sec-fetch-site': 'same-origin',
             'content-type': 'application/json'
         }
-        response = self.session.post(url, headers=headers, json={
+        response = self.session.post(url, headers=headers, timeout=self.request_timeout, json={
             "email": self.username,
             "password": self.password,
             "token": "",
@@ -84,7 +89,8 @@ class AkileSign(BaseSign):
             'sec-fetch-site': 'same-origin',
             'content-type': 'application/json'
         }
-        response = self.session.get(f"{self.base_url}/api/v1/user/Checkin", headers=headers)
+        response = self.session.get(f"{self.base_url}/api/v1/user/Checkin", headers=headers,
+                                    timeout=self.request_timeout)
         if response.status_code == 200:
             response_info = json.loads(response.text)
             if isinstance(response_info, str):

@@ -7,7 +7,6 @@ import datetime
 import os
 import random
 import re
-import string
 from urllib.parse import urljoin
 
 from scrapy import Selector
@@ -22,12 +21,14 @@ class LJDSign(BaseSign):
     # 自动回复列表
     auto_reply_msg = [
         "gan xie luo zhu fen xiang",
-        "ganxiefenxiang"
+        "ganxiefenxiang",
         "ganxielouzhufenxiang!"
     ]
 
     def __init__(self):
-        super(LJDSign, self).__init__("https://www.epl80.net", app_name="2048", app_key="LJD", proxy=False)
+        # 站点当前证书已过期，暂时只对该站点关闭校验，避免影响其他任务。
+        super(LJDSign, self).__init__("https://www.epl80.net", app_name="2048", app_key="LJD", proxy=False,
+                                      verify=False)
         self.retry_times = 3
         self.login_type = "login_cookie" if os.getenv("SIGN_COOKIE_LJD") else "login"
         self.session.headers.update({"User-Agent": self.user_agent})
@@ -37,8 +38,8 @@ class LJDSign(BaseSign):
     def login(self) -> bool:
         if self.login_type == "login_cookie":
             return self._cookie_login()
-        self.session.get(f"{self.base_url}/2048/")
-        login_page_url = f"{self.base_url}/2048/login.php?"
+        self.session.get(f"{self.base_url}/")
+        login_page_url = f"{self.base_url}/login.php?"
         response = self.session.get(login_page_url)
         response = self.pass_safe_challenge(response, login_page_url)
         selector = Selector(response)
@@ -49,7 +50,7 @@ class LJDSign(BaseSign):
         else:
             self.pwl("获取verifyhash失败")
             return False
-        self.session.get(f"{self.base_url}/2048/login.php?action=quit&verify={verify_hash}")
+        self.session.get(f"{self.base_url}/login.php?action=quit&verify={verify_hash}")
         headers = {
             "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
             "accept-language": "zh-CN,zh;q=0.9",
@@ -93,7 +94,7 @@ class LJDSign(BaseSign):
             resp_selector = Selector(response=login_resp)
             success_result = resp_selector.re(r"您已经顺利登录")
             if success_result is not None and len(success_result) > 0:
-                self.session.get(f"{self.base_url}/2048/search.php")
+                self.session.get(f"{self.base_url}/search.php")
                 self.pwl("您已经顺利登录")
                 return True
             return False
@@ -111,7 +112,7 @@ class LJDSign(BaseSign):
         return self.session.get(retry_url)
 
     def sign(self) -> bool:
-        self.session.get(f"{self.base_url}/2048/hack.php?H_name=qiandao")
+        self.session.get(f"{self.base_url}/hack.php?H_name=qiandao")
         headers = {
             "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
             "accept-language": "zh-CN,zh;q=0.9",
@@ -120,7 +121,7 @@ class LJDSign(BaseSign):
             "origin": f"{self.base_url}",
             "pragma": "no-cache",
             "priority": "u=0, i",
-            "referer": f"{self.base_url}/2048/hack.php?H_name=qiandao",
+            "referer": f"{self.base_url}/hack.php?H_name=qiandao",
             "sec-ch-ua": '"Google Chrome";v="129", "Not=A?Brand";v="8", "Chromium";v="129"',
             "sec-ch-ua-mobile": "?0",
             "sec-ch-ua-platform": '"Windows"',
@@ -139,13 +140,13 @@ class LJDSign(BaseSign):
             "hycode": "",
             "hyrandstr": "",
         }
-        sign_resp = self.session.post(f"{self.base_url}/2048/hack.php?H_name=qiandao&", headers=headers, data=data)
+        sign_resp = self.session.post(f"{self.base_url}/hack.php?H_name=qiandao&", headers=headers, data=data)
         if sign_resp.status_code == 200:
             resp_selector = Selector(response=sign_resp)
-            success_result = resp_selector.re(r"签到成功")
+            success_result = resp_selector.re(r"签到成功|已经签到|今日已签到")
             if success_result is not None and len(success_result) > 0:
-                self.session.get(f"{self.base_url}/2048/search.php")
-                self.pwl("签到成功")
+                self.session.get(f"{self.base_url}/search.php")
+                self.pwl(success_result[0])
                 return True
         # //*[@id="scbar_form"]/input[2]/@value
         return False
@@ -229,74 +230,10 @@ class LJDSign(BaseSign):
             "atc_title": f"Re:00",
             "atc_content": random.choice(self.auto_reply_msg),
             "atc_desc1": "",
-            'attachment_1': ('', b'', 'application/octet-stream'),
         }
         if not form_data.get("_hexie") or not form_data.get("verify"):
             self.pwl("获取hexie失败")
             return False
-        # boundary = '----WebKitFormBoundary' \
-        #            + ''.join(random.sample(string.ascii_letters + string.digits, 16))
-        rand_boundary = ''.join(random.sample(string.ascii_letters + string.digits, 16))
-        # m = MultipartEncoder(fields=form_data, boundary=boundary)
-        data = f'''------WebKitFormBoundary{rand_boundary}
-Content-Disposition: form-data; name="atc_usesign"
-
-{form_data['atc_usesign']}
-------WebKitFormBoundary{rand_boundary}
-Content-Disposition: form-data; name="atc_convert"
-
-{form_data['atc_convert']}
-------WebKitFormBoundary{rand_boundary}
-Content-Disposition: form-data; name="atc_autourl"
-
-{form_data['atc_autourl']}
-------WebKitFormBoundary{rand_boundary}
-Content-Disposition: form-data; name="step"
-
-{form_data['step']}
-------WebKitFormBoundary{rand_boundary}
-Content-Disposition: form-data; name="action"
-
-{form_data['action']}
-------WebKitFormBoundary{rand_boundary}
-Content-Disposition: form-data; name="fid"
-
-{form_data['fid']}
-------WebKitFormBoundary{rand_boundary}
-Content-Disposition: form-data; name="tid"
-
-{form_data['tid']}
-------WebKitFormBoundary{rand_boundary}
-Content-Disposition: form-data; name="verify"
-
-{form_data['verify']}
-------WebKitFormBoundary{rand_boundary}
-Content-Disposition: form-data; name="_hexie"
-
-{form_data['_hexie']}
-------WebKitFormBoundary{rand_boundary}
-Content-Disposition: form-data; name="atc_title"
-
-{form_data['atc_title']}
-------WebKitFormBoundary{rand_boundary}
-Content-Disposition: form-data; name="atc_content"
-
-{form_data['atc_content']}
-------WebKitFormBoundary{rand_boundary}
-Content-Disposition: form-data; name="one_sess"
-
-{form_data.get('one_sess', '')}
-------WebKitFormBoundary{rand_boundary}
-Content-Disposition: form-data; name="attachment_1"; filename=""
-Content-Type: application/octet-stream
-
-
-------WebKitFormBoundary{rand_boundary}
-Content-Disposition: form-data; name="atc_desc1"
-
-
-------WebKitFormBoundary{rand_boundary}--'''
-
         # 构造cookie
         append_cookie = {
             'zh_choose': 'n',
@@ -309,7 +246,6 @@ Content-Disposition: form-data; name="atc_desc1"
             "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
             "accept-language": "zh-CN,zh;q=0.9",
             "cache-control": "no-cache",
-            'Content-Type': f'multipart/form-data; boundary=----WebKitFormBoundary{rand_boundary}',
             "origin": f"{self.base_url}",
             "pragma": "no-cache",
             "priority": "u=0, i",
@@ -327,7 +263,12 @@ Content-Disposition: form-data; name="atc_desc1"
 
         url = urljoin(f"{self.base_url}/", action)
         # 发送请求
-        send_resp = self.session.post(url, headers=headers, data=data)
+        send_resp = self.session.post(
+            url,
+            headers=headers,
+            data=form_data,
+            files={"attachment_1": ("", b"", "application/octet-stream")},
+        )
         if send_resp.status_code == 200:
             result_selector = Selector(response=send_resp)
             jump_src = result_selector.re(r"发帖完毕")

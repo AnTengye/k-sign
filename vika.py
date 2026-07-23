@@ -1,6 +1,6 @@
 # -*- coding:utf-8 -*-
 """
-cron: 0 0 8 * * *
+cron: 0 14 8 * * *
 new Env('vika签到');
 """
 import datetime
@@ -17,7 +17,7 @@ class VikaSign(BaseSign):
         # 支持的方法
         self.is_sign = False
         self.exec_method = ["sign"]
-        self.sign_path = "/api/vikacg/v1/userMission"
+        self.sign_path = "api/vikacg/v1/userMission"
 
     def _login(self):
         """

@@ -4,3 +4,9 @@ venvv
 __pycache__
 .run
 .worktrees
+
+# 机器相关的本地运行配置（绝对路径/端口，不入库）
+compose.local.yml
+
+# 青龙运行时数据目录（db/日志/依赖缓存/密钥等，不入库）
+/data/

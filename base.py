@@ -16,9 +16,11 @@ from scrapy import Selector
 from gifcode import handle_yzm
 from notify import send
 
-requests.packages.urllib3.disable_warnings()
-
 DEFAULT_TIMEOUT = 10  # seconds
+
+
+class SignExecutionError(RuntimeError):
+    """Raised after a failed run has been logged and notified."""
 
 
 class BaseSign:
@@ -28,7 +30,7 @@ class BaseSign:
     url_info: ParseResult
     content: list
     exec_method: list = []  # 除了login以外，还默认需要执行的逻辑
-    retry_times = 1
+    retry_times = 2
     ua: str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
     # 用户信息配置
     username: str
@@ -176,33 +178,32 @@ class BaseSign:
         'msg_yanzheng_empty': '请输入验证问答答案',
     }
 
-    def __init__(self, base_url, app_name, app_key, proxy=False, timeout=10):
+    def __init__(self, base_url, app_name, app_key, proxy=False, timeout=10, verify=True):
         self.app_key = app_key
         self.app_name = app_name
         env_url = os.getenv(f'SIGN_URL_{app_key}')
         if env_url is None or env_url == "":
             if base_url == "":
-                raise f"未设置网址，请添加变量:SIGN_URL_{app_key}"
+                raise ValueError(f"未设置网址，请添加变量:SIGN_URL_{app_key}")
         else:
             base_url = env_url
+        base_url = base_url.rstrip("/")
         env_proxy = os.getenv(f'SIGN_PROXY_{app_key}')
         if env_proxy is None or env_proxy == "":
             proxy=proxy
         else:
-            if env_proxy == "False":
-                proxy = False
-            else:
-                proxy = True
+            proxy = env_proxy.strip().lower() not in {"false", "0", "no", "off"}
 
         self.url_info = urlparse(base_url)
         self.base_url = base_url
         up = os.getenv(f'SIGN_UP_{app_key}')
         if up:
-            user_info = up.split("|")
-            self.username = user_info[0]
-            self.password = user_info[1]
+            user_info = up.split("|", 1)
+            if len(user_info) != 2 or not user_info[0]:
+                raise ValueError(f"账号信息格式错误，应为 用户名|密码: SIGN_UP_{app_key}")
+            self.username, self.password = user_info
         else:
-            raise "未设置账号信息，请添加变量SIGN_UP_" + app_key
+            raise ValueError("未设置账号信息，请添加变量SIGN_UP_" + app_key)
         self.app_name = app_name
         self.content = list()
         session = requests.session()
@@ -214,12 +215,18 @@ class BaseSign:
         self.session = session
         if proxy:
             proxy = os.getenv('SIGN_UP_PROXY')
-            if proxy is not None:
+            if proxy:
+                if "://" not in proxy:
+                    proxy = "http://" + proxy
                 self.session.proxies.update({
-                    'http': 'http://' + proxy,
-                    'https': 'http://' + proxy
+                    'http': proxy,
+                    'https': proxy
                 })
-        self.session.verify = False
+            else:
+                self.pwl("已启用代理，但未设置 SIGN_UP_PROXY")
+                proxy = False
+        self.session.verify = verify
+        self.last_run_success = False
 
         print(f"自助脚本初始化完成：\n目标地址：{self.base_url}\n用户名：{self.username}\n代理状态：{proxy}")
 
@@ -244,7 +251,7 @@ class BaseSign:
             if sign_info.strip() == self.sign_text:
                 self.pwl("进行签到中...")
                 form_hash = sign_selector.xpath(self.form_hash_xpath).extract_first()
-                if form_hash == "":
+                if not form_hash:
                     self.pwl("获取签到表单验证失败")
                     return False
                 if self.sign_method == "post":
@@ -289,7 +296,15 @@ class BaseSign:
             self.pwl("formhash匹配失败")
             return False
         url = f"{self.base_url}/member.php?mod=logging&action=login&loginsubmit=yes&loginhash=LocOL&inajax=1"
-        payload = f'formhash={form_hash}&referer={quote(self.base_url, safe="")}%2Fportal.php&username={self.username}&password={self.password}&questionid=0&answer=&cookietime=2592000'
+        payload = {
+            "formhash": form_hash,
+            "referer": f"{self.base_url}/portal.php",
+            "username": self.username,
+            "password": self.password,
+            "questionid": "0",
+            "answer": "",
+            "cookietime": "2592000",
+        }
         headers = {
             'authority': self.url_info.hostname,
             'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,'
@@ -362,8 +377,22 @@ class BaseSign:
             verify_code = self._code(sec_hash, update, 5)
             if not verify_code:
                 return False
-            url = f"{self.base_url}/{login_page_path}?mod=logging&action=login&loginsubmit=yes&loginhash=Lmv7D&inajax=1"
-            payload = f'formhash={form_hash}&referer={quote(self.base_url, safe="")}%2Fforum.php&loginfield=username&username={self.username}&password={self.password}&seccodehash={sec_hash}&seccodemodid=member%3A%3Alogging&seccodeverify={verify_code}&questionid=0&answer=&cookietime=2592000'
+            separator = "&" if "?" in login_page_path else "?"
+            url = (f"{self.base_url}/{login_page_path}{separator}mod=logging&action=login"
+                   f"&loginsubmit=yes&loginhash=Lmv7D&inajax=1")
+            payload = {
+                "formhash": form_hash,
+                "referer": f"{self.base_url}/forum.php",
+                "loginfield": "username",
+                "username": self.username,
+                "password": self.password,
+                "seccodehash": sec_hash,
+                "seccodemodid": "member::logging",
+                "seccodeverify": verify_code,
+                "questionid": "0",
+                "answer": "",
+                "cookietime": "2592000",
+            }
             headers = {
                 'authority': self.url_info.hostname,
                 'accept': 'application/json, text/plain, */*',
@@ -399,10 +428,12 @@ class BaseSign:
     def _cookie_login(self) -> bool:
         cookie_string = os.getenv(f'SIGN_COOKIE_{self.app_key}')
         if cookie_string is None or cookie_string == "":
-            raise f"未设置cookie，请添加变量:SIGN_COOKIE_{self.app_key}"
+            raise ValueError(f"未设置cookie，请添加变量:SIGN_COOKIE_{self.app_key}")
         cookies = {}
         for cookie in cookie_string.split(";"):
-            key, value = cookie.strip().split("=")
+            key, separator, value = cookie.strip().partition("=")
+            if not separator or not key:
+                raise ValueError(f"Cookie 格式错误: {cookie}")
             cookies[key] = value
         self.session.cookies.update(cookies)
         qd_response = self.session.get(self.base_url)
@@ -589,42 +620,50 @@ class BaseSign:
     def run(self):
         content = self._exec("")
         send(title=self.app_name, content=content)
+        if not self.last_run_success:
+            raise SignExecutionError(f"{self.app_name} 执行失败")
+        return True
 
     def pre(self):
         pass
 
     def _exec(self, content) -> str:
-        self.retry_times -= 1
-        try:
-            self.pre()
-            login = self.login()
-            result = {"登录": login}
+        result = {}
+        login = False
+        attempts = max(1, int(self.retry_times))
+        for attempt in range(1, attempts + 1):
+            try:
+                self.pre()
+                login = bool(self.login())
+            except requests.exceptions.RequestException as e:
+                traceback.print_exc()
+                self.pwl(f"登录网络请求失败: {e}")
+            except Exception as e:
+                traceback.print_exc()
+                self.pwl(f"登录执行异常: {e}")
             if login:
-                if len(self.exec_method) != 0:
-                    for v in self.exec_method:
-                        func = getattr(self, v)
-                        result[v] = func()
-            elif self.retry_times > 0:
-                return self._exec(content)
-            for k, r in result.items():
-                content += f"{k} 结果：{r}\n"
-            content += f"日志：\n{self.log()}"
-        except (
-                requests.exceptions.RetryError,
-                requests.exceptions.ConnectionError,
-                requests.exceptions.ReadTimeout
-        ) as e:
-            # 当网络不好时，进行重试
-            traceback.print_exc()
-            content += str(e.args[0])
-            if self.retry_times > 0:
-                return self._exec(content)
-        except requests.exceptions.RequestException as e:
-            traceback.print_exc()
-            content += "网络请求有误，请检查代理设置"
-        except Exception as e:
-            traceback.print_exc()
-            content += "执行异常，请查看日志排查"
+                break
+            if attempt < attempts:
+                self.pwl(f"登录失败，准备重试（{attempt}/{attempts}）")
+
+        result["登录"] = login
+        if login:
+            for method_name in self.exec_method:
+                try:
+                    result[method_name] = bool(getattr(self, method_name)())
+                except requests.exceptions.RequestException as e:
+                    traceback.print_exc()
+                    self.pwl(f"{method_name} 网络请求失败: {e}")
+                    result[method_name] = False
+                except Exception as e:
+                    traceback.print_exc()
+                    self.pwl(f"{method_name} 执行异常: {e}")
+                    result[method_name] = False
+
+        self.last_run_success = bool(login and all(result.values()))
+        for key, value in result.items():
+            content += f"{key} 结果：{value}\n"
+        content += f"日志：\n{self.log()}"
         return content
 
 

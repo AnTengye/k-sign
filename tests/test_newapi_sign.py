@@ -19,11 +19,19 @@ def _install_stubs():
         def send(self, request, **kwargs):
             return None
 
+    class DummyCookieJar(dict):
+        def set(self, key, value, **kwargs):
+            self[key] = value
+
+        def get_dict(self):
+            return dict(self)
+
     class DummySession:
         def __init__(self):
             self.headers = {}
             self.proxies = {}
             self.verify = True
+            self.cookies = DummyCookieJar()
 
         def mount(self, *args, **kwargs):
             return None
@@ -43,6 +51,14 @@ def _install_stubs():
     requests_module = types.ModuleType("requests")
     requests_module.session = lambda: DummySession()
     requests_module.Session = DummySession
+    requests_module.request = lambda *args, **kwargs: None
+    requests_module.exceptions = types.SimpleNamespace(
+        RequestException=type("RequestException", (Exception,), {}),
+        RetryError=type("RetryError", (Exception,), {}),
+        ConnectionError=type("ConnectionError", (Exception,), {}),
+        ReadTimeout=type("ReadTimeout", (Exception,), {}),
+    )
+    requests_module.utils = types.SimpleNamespace(unquote=lambda value: value)
     requests_module.packages = types.SimpleNamespace(
         urllib3=types.SimpleNamespace(disable_warnings=disable_warnings)
     )
@@ -80,17 +96,23 @@ def _install_stubs():
     notify_module.send = lambda *args, **kwargs: None
     sys.modules["notify"] = notify_module
 
+    slidecode_module = types.ModuleType("slidecode")
+    slidecode_module.get_slide_width = lambda *args, **kwargs: 0
+    sys.modules["slidecode"] = slidecode_module
+
 
 _install_stubs()
 
-from newapi import NewApiSign
+from newapi import NewApiSign, discover_app_keys
+from base import SignExecutionError
 
 
 class FakeResponse:
-    def __init__(self, status_code=200, payload=None, text=""):
+    def __init__(self, status_code=200, payload=None, text="", url="https://example.com"):
         self.status_code = status_code
         self._payload = payload
         self.text = text
+        self.url = url
 
     def json(self):
         if self._payload is None:
@@ -173,6 +195,14 @@ class NewApiSignTests(unittest.TestCase):
             ],
         )
 
+    def test_run_raises_after_failed_login(self):
+        s = NewApiSign()
+        s.retry_times = 1
+        s.pre = lambda: None
+        s.login = lambda: False
+        with self.assertRaises(SignExecutionError):
+            s.run()
+
 
     def test_default_app_key_is_newapi(self):
         """Test 2: Default backward compatibility - app_key defaults to 'NEWAPI'."""
@@ -213,11 +243,7 @@ class AutoDiscoveryTests(unittest.TestCase):
         }
 
         with patch.dict(os.environ, mock_env, clear=True):
-            keys = sorted(set(
-                re.sub(r"^SIGN_URL_", "", k)
-                for k in os.environ
-                if k.startswith("SIGN_URL_NEWAPI")
-            ))
+            keys = discover_app_keys()
             self.assertEqual(keys, ["NEWAPI", "NEWAPI_A", "NEWAPI_B"])
 
     def test_discover_empty_when_no_newapi_vars(self):
@@ -228,11 +254,7 @@ class AutoDiscoveryTests(unittest.TestCase):
         mock_env = {"OTHER_VAR": "value"}
 
         with patch.dict(os.environ, mock_env, clear=True):
-            keys = sorted(set(
-                re.sub(r"^SIGN_URL_", "", k)
-                for k in os.environ
-                if k.startswith("SIGN_URL_NEWAPI")
-            ))
+            keys = discover_app_keys()
             self.assertEqual(keys, [])
 
 

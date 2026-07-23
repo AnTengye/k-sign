@@ -1,6 +1,6 @@
 # -*- coding:utf-8 -*-
 """
-cron: 0 0 8 * * *
+cron: 0 12 8 * * *
 new Env('new-api每日签到');
 
 Multi-site support via environment variable naming convention:
@@ -13,6 +13,7 @@ Backward compatible: plain SIGN_URL_NEWAPI / SIGN_UP_NEWAPI still works.
 
 import os
 import re
+import sys
 
 from base import BaseSign
 
@@ -41,6 +42,7 @@ class NewApiSign(BaseSign):
         self.login_type = "login"
         self.exec_method = ["sign"]
         self.skip_login = False
+        self.skip_reason = ""
         self.token_entry = token_entry
 
     def pre(self):
@@ -52,10 +54,12 @@ class NewApiSign(BaseSign):
         if status.get("turnstile_check"):
             self.pwl("Turnstile 已启用，跳过登录")
             self.skip_login = True
+            self.skip_reason = "Turnstile 已启用"
             return
         if not status.get("checkin_enabled", True):
             self.pwl("签到未启用，跳过登录")
             self.skip_login = True
+            self.skip_reason = "签到未启用"
 
     def _get_status(self):
         try:
@@ -81,7 +85,7 @@ class NewApiSign(BaseSign):
             })
             return True
         if self.skip_login:
-            return False
+            return True
         payload = {"username": self.username, "password": self.password}
         try:
             resp = self.session.post(f"{self.base_url}/api/user/login", json=payload)
@@ -110,6 +114,9 @@ class NewApiSign(BaseSign):
         return True
 
     def sign(self):
+        if self.skip_login:
+            self.pwl(f"跳过签到: {self.skip_reason}")
+            return True
         try:
             resp = self.session.get(f"{self.base_url}/api/user/checkin")
         except Exception as e:
@@ -176,6 +183,7 @@ def discover_app_keys():
 def run_site(app_key):
     token_entries = collect_token_entries(app_key)
     if token_entries:
+        all_success = True
         for index, token_entry in enumerate(token_entries, 1):
             user_id, _ = token_entry
             print(f"[{app_key}] Token {index}/{len(token_entries)} user_id={user_id}")
@@ -188,19 +196,27 @@ def run_site(app_key):
                 signer.run()
             except Exception as e:
                 print(f"[{app_key}] Token user_id={user_id} failed: {e}")
-        return
+                all_success = False
+        return all_success
 
     signer = NewApiSign(app_key=app_key, app_name=f"new-api-{app_key}")
     signer.run()
+    return True
 
 
 if __name__ == "__main__":
     keys = discover_app_keys()
+    failed = False
     if not keys:
         print("No SIGN_URL_NEWAPI* environment variables found")
+        failed = True
     for i, app_key in enumerate(keys, 1):
         print(f"[{i}/{len(keys)}] Processing: {app_key}")
         try:
-            run_site(app_key)
+            if not run_site(app_key):
+                failed = True
         except Exception as e:
             print(f"[{app_key}] Failed: {e}")
+            failed = True
+    if failed:
+        sys.exit(1)

@@ -1,6 +1,6 @@
 # -*- coding:utf-8 -*-
 """
-cron: 0 0 8 * * *
+cron: 0 6 8 * * *
 new Env('老王论坛签到');
 """
 import base64
@@ -11,7 +11,7 @@ from scrapy import Selector
 
 import slidecode
 from base import BaseSign
-from urllib.parse import quote
+from urllib.parse import quote, urljoin
 
 
 class LaoWangSSign(BaseSign):
@@ -113,7 +113,7 @@ class LaoWangSSign(BaseSign):
         token = self.fetch_index(5)
         if token == "":
             return False
-        url = sign_action
+        url = urljoin(sign_html.url, sign_action)
         payload = f'clicaptcha-submit-info={token}'
         headers = {
             'authority': self.url_info.hostname,
@@ -136,8 +136,11 @@ class LaoWangSSign(BaseSign):
         }
         response = self.session.post(url, headers=headers, data=payload)
         if response.status_code == 200:
-            self.pwl("签到成功")
-            return True
+            if any(text in response.text for text in ("签到成功", "已经签到", "今日已签到", "恭喜")):
+                self.pwl("签到成功或今日已签到")
+                return True
+            self.pwl("签到响应未包含成功标志")
+            return False
         self.pwl(response.text)
         return False
 

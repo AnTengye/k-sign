@@ -1,6 +1,6 @@
 # -*- coding:utf-8 -*-
 """
-cron: 0 0 8 * * *
+cron: 0 8 8 * * *
 new Env('moxing签到');
 """
 import json
@@ -32,9 +32,15 @@ class MoxingSign(BaseSign):
         self.session.get(f"{self.base_url}/auth.php?redirect=discuss")
         url_v2 = f"https://mox.{self.url_info.netloc}"
         self.session.get(f"{url_v2}/discuss")
-        self.session.post(f"{url_v2}/api/forum/check-in/users", data={"page": 1})
+        users_resp = self.session.post(f"{url_v2}/api/forum/check-in/users", data={"page": 1})
+        if users_resp.status_code >= 400:
+            self.pwl(f"获取签到用户列表失败:{users_resp.status_code}")
+            return False
         sign_info_resp = self.session.get(f"{url_v2}/forum/sign")
-        token = sign_info_resp.cookies.get("XSRF-TOKEN")
+        token = self.session.cookies.get("XSRF-TOKEN") or sign_info_resp.cookies.get("XSRF-TOKEN")
+        if not token:
+            self.pwl("获取 XSRF-TOKEN 失败，可能未完成 2.0 论坛登录")
+            return False
         captcha_resp = self.session.get(f"{url_v2}/api/forum/captcha/generate")
         if captcha_resp.status_code != 200:
             self.pwl(f"获取验证码失败:{captcha_resp.text}")
@@ -52,7 +58,10 @@ class MoxingSign(BaseSign):
                 self.pwl(f'签到失败:{response_info}')
         elif resp.status_code == 400:
             response_info = json.loads(resp.text)
-            self.pwl(f'签到失败:{response_info.get("message")}')
+            message = response_info.get("message", "签到失败")
+            self.pwl(f'签到失败:{message}')
+            if "已签到" in message or "已经" in message:
+                return True
         else:
             self.pwl(f'签到失败:{resp.status_code}')
         return False

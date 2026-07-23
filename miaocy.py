@@ -1,6 +1,6 @@
 # -*- coding:utf-8 -*-
 """
-cron: 0 0 8 * * *
+cron: 0 4 8 * * *
 new Env('喵次元签到');
 """
 
@@ -59,7 +59,14 @@ class MiaoCYSign(BaseSign):
                 self.pwl("登录失败, 验证码无法识别")
                 return False
             # payload = 'nonce=d43416ef91&user_name=mc2674mc&user_password=B6zmHen!7CdqK8q&remember=on&action=zb_user_login'
-            payload = f"nonce={nonce}&user_name={self.username}&user_password={self.password}&captcha_code={captcha_code}&remember=on&action=zb_user_login"
+            payload = {
+                "nonce": nonce,
+                "user_name": self.username,
+                "user_password": self.password,
+                "captcha_code": captcha_code,
+                "remember": "on",
+                "action": "zb_user_login",
+            }
             response = self.session.post(url, headers=headers, data=payload)
             if response.status_code == 200:
                 response_info = json.loads(response.text)
