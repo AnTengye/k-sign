@@ -6,7 +6,7 @@ new Env('百度网盘任务中心签到');
 SIGN_AUTH_DUPAN: 私有登录资料 JSON（兼容 one-tap-capture 格式）。
 或 SIGN_COOKIE_DUPAN + SIGN_CLIENT_DUPAN（静态字段 JSON）+ SIGN_USER_AGENT_DUPAN。
 SIGN_STATE_DIR_DUPAN: 持久目录，青龙默认 /ql/data/dupan，本地默认 data/dupan。
-仅执行已验证的 S1 签到，不执行旧会员签到、答题或领奖。
+先执行任务中心签到，再独立完成每日答题与任务上报；领奖需要额外签名，暂不提交。
 """
 import argparse
 from contextlib import contextmanager
@@ -30,6 +30,7 @@ from base import BaseSign
 
 ORIGIN = "https://pan.baidu.com"
 SHANGHAI = timezone(timedelta(hours=8))
+TASK_TOKEN_SALT = "ae82c240578eb391de93c2f4c3dfc3ba"
 STATIC_KEYS = {"app", "channel", "clienttype", "cuid", "devuid", "rchannel", "version", "versioncode"}
 COOKIE_FIELDS = ("version", "name", "value", "port", "port_specified", "domain", "domain_specified",
                  "domain_initial_dot", "path", "path_specified", "secure", "expires", "discard",
@@ -141,9 +142,14 @@ class DuPanSign(BaseSign):
     SIGN = "/coins/taskcenter/signin"
     SIGN_LIST = "/coins/taskcenter/signinlist"
     USER = "/rest/2.0/membership/user"
+    QUESTION = "/act/v2/membergrowv2/getdailyquestion"
+    ANSWER = "/act/v2/membergrowv2/answerquestion"
+    GROWTH_TASKS = "/api/taskscore/tasklist"
+    REPORT = "/api/taskscore/tasksave"
     BUSINESS_KEYS = {"task_id", "task_id_str", "task_from", "is_growth"}
+    MUTATIONS = {SIGN, ANSWER, REPORT}
 
-    def __init__(self, read_only=False):
+    def __init__(self, read_only=False, include_answer=False):
         # Preserve BaseSign logging/notification integration; no password is used.
         overrides = {"SIGN_UP_DUPAN": "cookie-user|cookie-auth", "SIGN_URL_DUPAN": ORIGIN}
         previous = {key: os.environ.get(key) for key in overrides}
@@ -167,12 +173,15 @@ class DuPanSign(BaseSign):
                                      "Referer": ORIGIN + "/operation/activitys/taskSystem/growth"})
         self.exec_method = ["sign"]
         self.read_only = read_only
+        self.include_answer = include_answer
         self.directory = state_directory()
         self.report = {"started_at": datetime.now(timezone.utc).isoformat(), "profile": "S1",
                        "read_only": read_only, "success": False, "requests": []}
         self.source_digest = None
         self.ledger = None
+        self.question_ledger = None
         self.mutation_count = 0
+        self.mutation_counts = {}
         self.session_ready = False
         self.locked = False
 
@@ -227,17 +236,25 @@ class DuPanSign(BaseSign):
         extra = extra or {}
         permitted = {self.LOGIN: set(), self.HOME: set(), self.TASKS: {"task_from"},
                      self.SIGN: self.BUSINESS_KEYS, self.SIGN_LIST: self.BUSINESS_KEYS,
-                     self.USER: {"method"}}
+                     self.USER: {"method"}, self.QUESTION: set(),
+                     self.ANSWER: {"ask_id", "answer"},
+                     self.GROWTH_TASKS: {"task_from"},
+                     self.REPORT: {"task_id", "task_from", "uk"}}
         if path not in permitted or set(extra) != permitted[path]:
             raise DuPanError("拒绝访问签到白名单之外的接口或参数。")
-        if path == self.SIGN and (self.read_only or not self.locked or self.mutation_count):
-            raise DuPanError("当前运行不允许再次提交签到。")
+        if path in self.MUTATIONS and (self.read_only or not self.locked or self.mutation_counts.get(path)):
+            raise DuPanError("当前运行不允许再次提交该任务动作。")
         params = {**self.profile["native_static_params"], **extra,
                   "rand": secrets.token_hex(20), "time": str(int(time.time()))}
-        entry = {"path": path, "query_keys": sorted(params), "mutation": path == self.SIGN,
+        if path == self.REPORT:
+            payload = "_".join((str(params["task_id"]), str(params["uk"]), params["rand"],
+                                params["time"], TASK_TOKEN_SALT))
+            params["token"] = hashlib.md5(payload.encode()).hexdigest()
+        entry = {"path": path, "query_keys": sorted(params), "mutation": path in self.MUTATIONS,
                  "at": datetime.now(timezone.utc).isoformat()}
-        if path == self.SIGN:
+        if path in self.MUTATIONS:
             self.mutation_count += 1
+            self.mutation_counts[path] = self.mutation_counts.get(path, 0) + 1
         self.report["requests"].append(entry)
         try:
             with self.session.get(ORIGIN + path, params=params, timeout=25,
@@ -272,8 +289,11 @@ class DuPanSign(BaseSign):
         if not isinstance(uk, str) or not re.fullmatch(r"[0-9]{1,24}", uk):
             raise DuPanError("未读到有效登录身份，停止签到。")
         account = hashlib.sha256(uk.encode()).hexdigest()
+        self.uk = uk
         self.ledger_path = self.directory / ("attempt-" + account + ".json")
         self.ledger = read_json(self.ledger_path) if self.ledger_path.exists() else {}
+        self.question_ledger_path = self.directory / ("question-" + account + ".json")
+        self.question_ledger = read_json(self.question_ledger_path) if self.question_ledger_path.exists() else {}
         return True
 
     def _home(self):
@@ -365,13 +385,143 @@ class DuPanSign(BaseSign):
         self.pwl(f"任务中心签到成功：连续 {after['signin_days']} 天，积分 +{delta['points']}，成长值 +{delta['growth']}。")
         return True
 
+    def _question(self):
+        data = self._request_json(self.QUESTION).get("data")
+        if not isinstance(data, dict):
+            raise DuPanError("每日题目状态无效。")
+        status = number(data.get("answer_status"))
+        if status not in {-1, 0, 1}:
+            raise DuPanError("每日答题状态不明确。")
+        ask_id = str(data.get("ask_id", ""))
+        if not re.fullmatch(r"[0-9]{1,24}", ask_id):
+            raise DuPanError("每日题目 ID 无效。")
+        ask_time = number(data.get("ask_time"))
+        day = datetime.fromtimestamp(ask_time, SHANGHAI).date().isoformat()
+        if day != datetime.now(SHANGHAI).date().isoformat():
+            raise DuPanError("题目日期与当前日期不一致，停止本轮。")
+        answer = number(data.get("answer")) if status == -1 else None
+        if status == -1 and answer not in {0, 1}:
+            raise DuPanError("题目不是已验证的判断题格式。")
+        return {"status": status, "ask_id": ask_id, "answer": answer, "day": day}
+
+    def _growth_task(self):
+        data = self._request_json(self.GROWTH_TASKS, {"task_from": "task_sys_task_growth"})
+        tasks = data.get("result", {}).get("list")
+        if not isinstance(tasks, list):
+            raise DuPanError("成长任务列表无效。")
+        matches = [task for task in tasks if isinstance(task, dict) and str(task.get("task_type")) == "169"]
+        if len(matches) != 1:
+            raise DuPanError("每日答题任务不存在或不唯一。")
+        task = matches[0]
+        identifier = task.get("task_id_str")
+        if (task.get("task_from") != "task_sys_task_growth" or not isinstance(identifier, str)
+                or not re.fullmatch(r"[0-9]{1,24}", identifier)):
+            raise DuPanError("每日答题任务来源或字符串 ID 无效。")
+        status = number(task.get("task_status"))
+        if status not in {0, 1, 3, 6}:
+            raise DuPanError("每日答题任务状态不明确。")
+        return {"task_id": identifier, "task_from": "task_sys_task_growth", "status": status}
+
+    def _balances(self):
+        home = self._home()
+        member = self._request_json(self.USER, {"method": "query"})
+        return {"signed": home["signed"], "points": home["points"],
+                "growth": number(member.get("level_info", {}).get("current_value"))}
+
+    def _save_question_attempt(self, question, task, action):
+        if datetime.now(SHANGHAI).date().isoformat() != question["day"]:
+            raise DuPanError("答题预检期间发生换日，停止本轮。")
+        ledger = self.question_ledger
+        if ledger.get("day") == question["day"]:
+            if ledger.get("ask_id") != question["ask_id"] or ledger.get("task_id_str") != task["task_id"]:
+                raise DuPanError("当天题目或任务 ID 已变化，停止本轮。")
+        else:
+            ledger = {"day": question["day"], "ask_id": question["ask_id"],
+                      "task_id_str": task["task_id"]}
+        if action in ledger:
+            raise DuPanError("当天已尝试该答题动作；仅保留状态读回，不重复提交。")
+        ledger[action] = {"status": "attempting", "at": datetime.now(timezone.utc).isoformat()}
+        write_json(self.question_ledger_path, ledger)
+        self.question_ledger = ledger
+
+    def answer(self):
+        question, task = self._question(), self._growth_task()
+        result = self.report["answer"] = {"day": question["day"], "question_status": question["status"],
+                                          "task_status": task["status"]}
+        if self.question_ledger.get("day") == question["day"] and (
+                self.question_ledger.get("ask_id") != question["ask_id"] or
+                self.question_ledger.get("task_id_str") != task["task_id"]):
+            raise DuPanError("当天题目或任务 ID 已变化，停止本轮。")
+        if self.read_only:
+            result["status"] = "read_only"
+            self.pwl(f"每日答题只读：题目状态 {question['status']}，任务状态 {task['status']}。")
+            return True
+        if question["status"] == 0:
+            result["status"] = "answered_wrong"
+            self.pwl("每日题目已答错，停止上报。")
+            return False
+        if task["status"] == 1:
+            if question["status"] != 1:
+                raise DuPanError("题目与任务完成状态不一致。")
+            result["status"] = "already_claimed"
+            self.pwl("每日答题任务已完成并领取，本次提交 0 次。")
+            return True
+        if question["status"] == -1:
+            if task["status"] not in {0, 3}:
+                raise DuPanError("题目未答但任务已待领取，停止本轮。")
+            self._save_question_attempt(question, task, "answer")
+            try:
+                response = self._request_json(self.ANSWER, {"ask_id": question["ask_id"],
+                                                           "answer": question["answer"]})
+                answer_data = response.get("data")
+                if not isinstance(answer_data, dict) or number(answer_data.get("answer_status")) != 1:
+                    raise DuPanError("答题提交未确认正确。")
+            except DuPanError as exc:
+                result["submission_error"] = str(exc)
+            after_question = self._question()
+            result["question_status"] = after_question["status"]
+            if after_question["ask_id"] != question["ask_id"] or after_question["status"] != 1 or "submission_error" in result:
+                result["status"] = "answer_needs_review"
+                self.pwl("答题提交结果待核对；当天不会自动重试或继续上报。")
+                return False
+        task_after_answer = self._growth_task()
+        if task_after_answer["task_id"] != task["task_id"]:
+            raise DuPanError("答题任务 ID 在执行中变化，停止本轮。")
+        task = task_after_answer
+        if task["status"] in {0, 3}:
+            before = self._balances()
+            self._save_question_attempt(question, task, "report")
+            try:
+                self._request_json(self.REPORT, {"task_id": task["task_id"],
+                                                 "task_from": task["task_from"], "uk": self.uk})
+            except DuPanError as exc:
+                result["report_error"] = str(exc)
+            after_task = self._growth_task()
+            result["task_status"] = after_task["status"]
+            if after_task["task_id"] != task["task_id"] or after_task["status"] not in {1, 6} or "report_error" in result:
+                result["status"] = "report_needs_review"
+                self.pwl("答题任务上报结果待核对；当天不会自动重试。")
+                return False
+            after = self._balances()
+            result["balance_delta"] = {key: after[key] - before[key] for key in ("points", "growth")}
+            task = after_task
+        if task["status"] == 6:
+            result["status"] = "waiting_reward"
+            self.pwl("每日答题已正确并上报，任务待领取；纯脚本领奖签名尚未验证。")
+            return False
+        result["status"] = "already_claimed"
+        self.pwl("每日答题任务已完成并领取。")
+        return True
+
     def _exec(self, content):
         # Keep one lock through requests, submission ledger and CookieJar persistence.
         try:
             with directory_lock(self.directory):
                 self.locked = True
                 try:
-                    self.last_run_success = bool(self.login() and self.sign())
+                    self.sign_success = bool(self.login() and self.sign())
+                    self.answer_success = self.answer() if self.sign_success and self.include_answer else None
+                    self.last_run_success = self.sign_success and self.answer_success is not False
                 except Exception as exc:
                     self.last_run_success = False
                     self.report["error"] = str(exc) if isinstance(exc, DuPanError) else "本地状态或响应格式无效。"
@@ -394,15 +544,16 @@ class DuPanSign(BaseSign):
             self.pwl(str(exc) if isinstance(exc, DuPanError) else "本地状态或报告保存失败，停止本轮。")
         finally:
             self.locked = False
-        return content + f"任务中心签到结果：{self.last_run_success}\n" + self.log()
+        return content + f"任务中心签到结果：{getattr(self, 'sign_success', False)}；答题任务完成：{getattr(self, 'answer_success', None)}\n" + self.log()
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="百度网盘任务中心纯脚本签到（S1）")
+    parser = argparse.ArgumentParser(description="百度网盘任务中心纯脚本签到及每日答题")
     modes = parser.add_mutually_exclusive_group()
-    modes.add_argument("--status", action="store_true", help="只读登录和签到状态，禁止提交，不发送通知")
+    modes.add_argument("--status", action="store_true", help="只读签到与答题状态，禁止提交，不发送通知")
     modes.add_argument("--import-auth", type=Path, help="离线导入已有登录资料，不请求网络，不覆盖已有文件")
     parser.add_argument("--no-notify", action="store_true", help="只在控制台输出，不发送通知")
+    parser.add_argument("--sign-only", action="store_true", help="仅运行已验证的签到，不执行每日答题")
     args = parser.parse_args(argv)
     os.umask(0o077)
     try:
@@ -410,7 +561,7 @@ def main(argv=None):
             destination = import_profile(args.import_auth, state_directory())
             print(f"登录资料已保存（0600）：{destination}")
             return 0
-        sign = DuPanSign(read_only=args.status)
+        sign = DuPanSign(read_only=args.status, include_answer=not args.sign_only)
         if args.status or args.no_notify:
             sign._exec("")
         else:

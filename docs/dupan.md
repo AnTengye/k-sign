@@ -1,8 +1,10 @@
-# 百度网盘 App 任务中心签到
+# 百度网盘 App 任务中心签到与每日答题
 
-`dupan.py` 对应 App「我的 → 用户名旁 VIP → 成长值任务 / 去签到 → 任务中心」签到。
-唯一变更接口是 `GET https://pan.baidu.com/coins/taskcenter/signin`。
-已移除旧 `/rest/2.0/membership/level?method=signin`、每日答题和领奖流程。
+`dupan.py` 对应 App「我的 → 用户名旁 VIP → 成长值任务 / 去签到 → 任务中心」。
+每日先签到，再做判断题并上报成长任务。三个已验证的变更接口是
+`/coins/taskcenter/signin`、`/act/v2/membergrowv2/answerquestion` 和 `/api/taskscore/tasksave`。
+旧 `/rest/2.0/membership/level?method=signin` 仍已移除。**领奖尚未实现**：上报后的状态 `6`
+是“待领取”，不等于奖励到账；脚本会报告未完成并返回非零退出码。
 
 ## 验证范围
 
@@ -18,8 +20,8 @@
 | 不发送 | `z/rand2/offlinepackage/themeinfo/jt/aid/hjs/token` 等附加签名字段 |
 | 服务器读回 | 签到 `0→1`，连续天数 `4→5`，积分 `46→52`，成长值 `86848→86862` |
 
-本文件记录的首次成功来自来源项目的入口。迁移后的代码仍需把自身的只读检查、后续未签到日的首次提交、
-实际青龙容器内结果分别验收；脚本本身不直接管理定时任务，青龙订阅可按脚本头信息自动添加任务。
+首次签到的原始验收来自来源项目的入口；迁移后的签到与青龙情况见文末。
+脚本本身不直接管理定时任务，青龙订阅按脚本头信息添加任务。
 奖励随服务器返回变化，不把历史 `+6/+14` 写死为固定奖励。
 
 ## 凭证配置
@@ -63,6 +65,7 @@ python3 dupan.py --import-auth /private/path/baidu-auth.json
 - `auth.json`：离线导入的初始资料。
 - `session.json`：刷新后的 CookieJar，保留 Cookie 域、路径、过期时间等属性。
 - `attempt-<账号摘要>.json`：当天提交记录，不包含账号明文。
+- `question-<账号摘要>.json`：当天答题和上报的独立提交记录；每次请求前先落盘，避免超时后重放。
 - `reports/*.json`：仅含接口路径、参数名称、状态、余额差值、业务码和时间的脱敏报告。
 
 运行全过程加互斥锁。文件为 `0600`，专用目录为 `0700`。
@@ -76,21 +79,35 @@ python3 dupan.py --import-auth /private/path/baidu-auth.json
 3. 未签到时读取唯一的 `task_type=166` 及其字符串 ID，然后读回签到列表、日期、连续天数、积分和成长值。
 4. 仅在状态一致且当天没有提交记录时，将提交记录落盘，然后发送最多一次签到请求。
 5. 成功、业务拒绝或网络超时后均只读回状态与余额；超时不能当作确定失败自动重发。
-6. 原子保存 CookieJar 和脱敏报告。重启后仍尊重当天提交记录。
+6. 签到成功或已签到后，读取当天题目及 `task_type=169` 成长任务。仅接受服务端给出的判断题答案和当天题目 ID。
+7. 题目未答时提交最多一次；读回 `answer_status=1` 后，用当前任务 ID、UK、新 `rand/time` 和官方 MD5 公式上报最多一次，读回任务状态。
+8. 状态 `1` 才视为奖励已领取；状态 `6` 明确记为 `waiting_reward`，返回非零，不调用未经验证的领奖接口。
+9. 原子保存 CookieJar 和脱敏报告。重启后仍尊重当天各动作的提交记录。
 
 HTTP 层关闭自动重试，禁止重定向，启用 HTTPS 证书校验。
 不会隐式继承宿主机 `HTTP_PROXY/HTTPS_PROXY`，需要代理时使用上表明确配置。
-跨日、缺失字段、状态矛盾、凭证失效、余额读回失败均返回非零退出码；遇到当天已签到属于正常跳过。
+跨日、缺失字段、状态矛盾、凭证失效、余额读回失败均返回非零退出码；遇到当天已签到属于正常跳过，仍继续检查答题。
+答题或上报超时后，下一次只读回服务端状态，不会自动重发同一动作。
 
 ```bash
-python3 dupan.py --status       # 只读，0 变更，无通知
-python3 dupan.py --no-notify    # 正常签到，关闭本次通知
-python3 dupan.py                # 正常签到，使用 k-sign 通知
+python3 dupan.py --status       # 签到与答题只读状态，0 变更，无通知
+python3 dupan.py --no-notify    # 签到、答题、上报；关闭本次通知
+python3 dupan.py                # 同上，使用 k-sign 通知
+python3 dupan.py --sign-only    # 仅签到，应急回退开关
 ```
 
 脚本使用 k-sign 已有 Python 依赖和 BaseSign；不新增 Android/浏览器运行依赖。
 在青龙完成依赖和凭证配置后，沿用 `task AnTengye_k-sign_master/dupan.py`。
 先检查该账号已有定时任务，并在下一未签到日人工验收一次；同一天不要人为删除提交记录后重新尝试。
+
+## 2026-09-24 纯脚本答题验收与领奖边界
+
+- 本地现有账号当天已由青龙完成签到。新入口从持久的私有资料读取会话，未启动 App、ADB、模拟器、浏览器或签名服务。
+- 当天唯一题目先读为 `answer_status=-1`，唯一 `task_type=169` 任务状态为 `0`。
+- 脚本各发送一次提交答案和完成上报，HTTP 都为 `200`、业务码都为 `0`；服务端读回分别为题目 `-1→1`、任务 `0→6`。
+- 答案请求只有已有静态客户端字段、当前题目 ID/答案和新 `rand/time`；上报另带当前任务 ID、UK 和本地 MD5 `token`。两次均没有 `z/jt`。
+- 任务状态 `6` 仍待领奖，积分和成长值没有新增；本次整体退出码为 `1`，不可宣称答题奖励已到账。
+- [当前官方任务脚本](https://staticplat.cdn.bcebos.com/taskSystem/js/index.2cf72c2e.js) 对 `/api/taskscore/antisave` 仍使用 HTJ SDK 参数。已有的基础参数及普通浏览器 HTJ 组合返回业务码 `8001`；成功的历史领奖请求使用了 App 原生桥接及 HTJ 参数。尚无独立生成领奖所需参数并成功领取的证据，因此不发送该请求。
 
 ## 2026-09-08 迁移验收
 
