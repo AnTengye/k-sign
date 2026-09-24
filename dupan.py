@@ -6,7 +6,8 @@ new Env('百度网盘任务中心签到');
 SIGN_AUTH_DUPAN: 私有登录资料 JSON（兼容 one-tap-capture 格式）。
 或 SIGN_COOKIE_DUPAN + SIGN_CLIENT_DUPAN（静态字段 JSON）+ SIGN_USER_AGENT_DUPAN。
 SIGN_STATE_DIR_DUPAN: 持久目录，青龙默认 /ql/data/dupan，本地默认 data/dupan。
-先执行任务中心签到，再独立完成每日答题与任务上报；领奖需要额外签名，暂不提交。
+先执行任务中心签到，再独立完成每日答题与任务上报；默认不领奖。
+--claim-probe 是人工触发、最多一次的无 App 参数充分性实验，不在定时流程内。
 """
 import argparse
 from contextlib import contextmanager
@@ -26,6 +27,7 @@ import time
 from requests.adapters import HTTPAdapter
 
 from base import BaseSign
+from dupan_signing import native_rand_pair, native_rchannel
 
 
 ORIGIN = "https://pan.baidu.com"
@@ -146,10 +148,11 @@ class DuPanSign(BaseSign):
     ANSWER = "/act/v2/membergrowv2/answerquestion"
     GROWTH_TASKS = "/api/taskscore/tasklist"
     REPORT = "/api/taskscore/tasksave"
+    CLAIM = "/api/taskscore/antisave"
     BUSINESS_KEYS = {"task_id", "task_id_str", "task_from", "is_growth"}
-    MUTATIONS = {SIGN, ANSWER, REPORT}
+    MUTATIONS = {SIGN, ANSWER, REPORT, CLAIM}
 
-    def __init__(self, read_only=False, include_answer=False):
+    def __init__(self, read_only=False, include_answer=False, claim_probe=False):
         # Preserve BaseSign logging/notification integration; no password is used.
         overrides = {"SIGN_UP_DUPAN": "cookie-user|cookie-auth", "SIGN_URL_DUPAN": ORIGIN}
         previous = {key: os.environ.get(key) for key in overrides}
@@ -174,8 +177,10 @@ class DuPanSign(BaseSign):
         self.exec_method = ["sign"]
         self.read_only = read_only
         self.include_answer = include_answer
+        self.claim_probe = claim_probe
         self.directory = state_directory()
-        self.report = {"started_at": datetime.now(timezone.utc).isoformat(), "profile": "S1",
+        self.report = {"started_at": datetime.now(timezone.utc).isoformat(),
+                       "profile": "claim_probe" if claim_probe else "S1",
                        "read_only": read_only, "success": False, "requests": []}
         self.source_digest = None
         self.ledger = None
@@ -184,6 +189,7 @@ class DuPanSign(BaseSign):
         self.mutation_counts = {}
         self.session_ready = False
         self.locked = False
+        self.claim_security = None
 
     def _load_session(self):
         source = Path(os.getenv("SIGN_AUTH_DUPAN") or self.directory / "auth.json").expanduser()
@@ -239,14 +245,34 @@ class DuPanSign(BaseSign):
                      self.USER: {"method"}, self.QUESTION: set(),
                      self.ANSWER: {"ask_id", "answer"},
                      self.GROWTH_TASKS: {"task_from"},
-                     self.REPORT: {"task_id", "task_from", "uk"}}
+                     self.REPORT: {"task_id", "task_from", "uk"},
+                     self.CLAIM: {"task_id", "task_from", "uk", "action"}}
         if path not in permitted or set(extra) != permitted[path]:
             raise DuPanError("拒绝访问签到白名单之外的接口或参数。")
+        if path == self.CLAIM and (not self.claim_probe or self.claim_security is None or
+                                   extra["action"] != "receive_award"):
+            raise DuPanError("纯脚本领奖只允许显式的一次性实验。")
+        if path == self.CLAIM and datetime.now(SHANGHAI).date().isoformat() != self.report.get("answer", {}).get("day"):
+            raise DuPanError("领奖实验预检期间发生换日，未发送请求。")
         if path in self.MUTATIONS and (self.read_only or not self.locked or self.mutation_counts.get(path)):
             raise DuPanError("当前运行不允许再次提交该任务动作。")
         params = {**self.profile["native_static_params"], **extra,
                   "rand": secrets.token_hex(20), "time": str(int(time.time()))}
-        if path == self.REPORT:
+        if path == self.CLAIM:
+            bduss = next((cookie.value for cookie in self.session.cookies
+                          if cookie.name == "BDUSS" and cookie.domain.lstrip(".") in {"baidu.com", "pan.baidu.com"}), None)
+            if not bduss:
+                raise DuPanError("领奖签名缺少当前 BDUSS，停止本轮。")
+            security = self.claim_security
+            static = self.profile["native_static_params"]
+            try:
+                params["rand"], params["rand2"] = native_rand_pair(
+                    bduss, security["uid"], security["encrypted_sk"], params["time"],
+                    static["devuid"], static["version"])
+                params["rchannel"] = native_rchannel(security["uid"], params["time"], static["channel"])
+            except ValueError:
+                raise DuPanError("领奖签名资料无效，未发送请求。") from None
+        if path in {self.REPORT, self.CLAIM}:
             payload = "_".join((str(params["task_id"]), str(params["uk"]), params["rand"],
                                 params["time"], TASK_TOKEN_SALT))
             params["token"] = hashlib.md5(payload.encode()).hexdigest()
@@ -513,14 +539,88 @@ class DuPanSign(BaseSign):
         self.pwl("每日答题任务已完成并领取。")
         return True
 
+    def _load_claim_security(self):
+        source = self.directory / "claim-signing.json"
+        if source.is_symlink() or not source.is_file() or source.stat().st_mode & 0o077:
+            raise DuPanError("一次性领奖实验需要私有签名资料文件（0600）。")
+        security = read_json(source)
+        if (not isinstance(security, dict) or set(security) != {"uid", "encrypted_sk", "account_uk_sha256"} or
+                security["account_uk_sha256"] != hashlib.sha256(self.uk.encode()).hexdigest() or
+                not isinstance(security["uid"], str) or not re.fullmatch(r"[0-9]{1,24}", security["uid"]) or
+                not isinstance(security["encrypted_sk"], str)):
+            raise DuPanError("领奖签名资料与当前账号不匹配，未发送请求。")
+        bduss = next((cookie.value for cookie in self.session.cookies
+                      if cookie.name == "BDUSS" and cookie.domain.lstrip(".") in {"baidu.com", "pan.baidu.com"}), None)
+        static = self.profile["native_static_params"]
+        try:
+            native_rand_pair(bduss, security["uid"], security["encrypted_sk"],
+                             str(int(time.time())), static["devuid"], static["version"])
+        except ValueError:
+            raise DuPanError("领奖签名资料无效，未发送请求。") from None
+        self.claim_security = security
+
+    def claim_reward_probe(self):
+        """One opt-in no-App claim attempt; never called by the daily cron path."""
+        if not self.claim_probe or self.read_only:
+            raise DuPanError("当前模式禁止领奖实验。")
+        question, task = self._question(), self._growth_task()
+        result = self.report["answer"] = {"day": question["day"], "question_status": question["status"],
+                                          "task_status": task["status"], "probe": True}
+        if question["status"] != 1:
+            raise DuPanError("题目尚未确认答对，不尝试领奖。")
+        if task["status"] == 1:
+            result["status"] = "already_claimed_no_probe"
+            self.pwl("答题奖励已被领取，无法验证这次纯脚本实验。")
+            return False
+        if task["status"] != 6 or self._home()["signed"] != 1:
+            raise DuPanError("答题任务不在当天已签到、待领取状态。")
+        if (self.question_ledger.get("day") == question["day"] and
+                (self.question_ledger.get("ask_id") != question["ask_id"] or
+                 self.question_ledger.get("task_id_str") != task["task_id"])):
+            raise DuPanError("当天题目或任务 ID 已变化，停止领奖实验。")
+        self._load_claim_security()
+        before = self._balances()
+        self._save_question_attempt(question, task, "claim_probe")
+        response, error = None, None
+        try:
+            response = self._request_json(self.CLAIM, {"task_id": task["task_id"],
+                "task_from": task["task_from"], "uk": self.uk, "action": "receive_award"})
+        except DuPanError as exc:
+            error = str(exc)
+        after_task = self._growth_task()
+        after = self._balances()
+        result["task_status"] = after_task["status"]
+        result["balance_delta"] = {key: after[key] - before[key] for key in ("points", "growth")}
+        if error:
+            result["submission_error"] = error
+        if after_task["task_id"] != task["task_id"] or after_task["status"] != 1 or error:
+            result["status"] = "claim_needs_review"
+            self.pwl("一次性纯脚本领奖实验未确认成功；不会自动重试。")
+            return False
+        reward = response.get("result") if isinstance(response, dict) else None
+        if not isinstance(reward, dict):
+            result["status"] = "claim_needs_review"
+            return False
+        expected = {"points": number(reward.get("addScore")),
+                    "growth": number(reward.get("addGrowScore"))}
+        result["reward_response"] = expected
+        confirmed = (expected == result["balance_delta"] and sum(expected.values()) > 0)
+        result["status"] = "claimed" if confirmed else "claim_needs_review"
+        self.pwl("一次性纯脚本领奖已读回到账。" if confirmed else "领奖响应与余额不一致；不会自动重试。")
+        return confirmed
+
     def _exec(self, content):
         # Keep one lock through requests, submission ledger and CookieJar persistence.
         try:
             with directory_lock(self.directory):
                 self.locked = True
                 try:
-                    self.sign_success = bool(self.login() and self.sign())
-                    self.answer_success = self.answer() if self.sign_success and self.include_answer else None
+                    if self.claim_probe:
+                        self.sign_success = bool(self.login())
+                        self.answer_success = self.claim_reward_probe() if self.sign_success else None
+                    else:
+                        self.sign_success = bool(self.login() and self.sign())
+                        self.answer_success = self.answer() if self.sign_success and self.include_answer else None
                     self.last_run_success = self.sign_success and self.answer_success is not False
                 except Exception as exc:
                     self.last_run_success = False
@@ -544,6 +644,8 @@ class DuPanSign(BaseSign):
             self.pwl(str(exc) if isinstance(exc, DuPanError) else "本地状态或报告保存失败，停止本轮。")
         finally:
             self.locked = False
+        if self.claim_probe:
+            return content + f"一次性答题领奖实验：{getattr(self, 'answer_success', None)}\n" + self.log()
         return content + f"任务中心签到结果：{getattr(self, 'sign_success', False)}；答题任务完成：{getattr(self, 'answer_success', None)}\n" + self.log()
 
 
@@ -552,6 +654,7 @@ def main(argv=None):
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument("--status", action="store_true", help="只读签到与答题状态，禁止提交，不发送通知")
     modes.add_argument("--import-auth", type=Path, help="离线导入已有登录资料，不请求网络，不覆盖已有文件")
+    modes.add_argument("--claim-probe", action="store_true", help="一次性无 App 领奖实验；不属于每日定时任务")
     parser.add_argument("--no-notify", action="store_true", help="只在控制台输出，不发送通知")
     parser.add_argument("--sign-only", action="store_true", help="仅运行已验证的签到，不执行每日答题")
     args = parser.parse_args(argv)
@@ -561,8 +664,9 @@ def main(argv=None):
             destination = import_profile(args.import_auth, state_directory())
             print(f"登录资料已保存（0600）：{destination}")
             return 0
-        sign = DuPanSign(read_only=args.status, include_answer=not args.sign_only)
-        if args.status or args.no_notify:
+        sign = DuPanSign(read_only=args.status, include_answer=not args.sign_only,
+                         claim_probe=args.claim_probe)
+        if args.status or args.no_notify or args.claim_probe:
             sign._exec("")
         else:
             sign.run()
