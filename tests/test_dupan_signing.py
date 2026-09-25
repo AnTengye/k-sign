@@ -1,6 +1,6 @@
 import unittest
 
-from dupan_signing import _rc4, native_rand_pair, native_rchannel
+from dupan_signing import _rc4, extract_sofire_material, native_rand_pair, native_rchannel, sofire_z
 
 
 class NativeRandTests(unittest.TestCase):
@@ -28,6 +28,31 @@ class NativeRandTests(unittest.TestCase):
                 candidate[index] = value
                 with self.assertRaises(ValueError):
                     native_rand_pair(*candidate)
+
+    def test_sofire_z_offline_round_trip(self):
+        material = {"seed": "0123456789ABCDEF0123456789ABCDEF", "status": 101,
+                    "flag1": 10, "flag2": 207, "flag3": "08"}
+        z = sofire_z(**material, timestamp="1780000000", random_hex="A1B2C3")
+        self.assertEqual(z, "2D583210BA98FEDC5531765432108EBA983CFEDC7654A1A500B208C36A18")
+        self.assertEqual(len(z), 60)
+        self.assertEqual(extract_sofire_material(z), material)
+        self.assertEqual(z[44:46] + z[50:52] + z[54:56], "A1B2C3")
+        self.assertEqual(int(z[56:60] + z[46:50], 16), 1780000000)
+
+    def test_sofire_z_rejects_invalid_material(self):
+        material = {"seed": "0123456789ABCDEF0123456789ABCDEF", "status": 101,
+                    "flag1": 10, "flag2": 207, "flag3": "08", "timestamp": "1780000000"}
+        for key, value in (("seed", "invalid"), ("status", 300), ("flag1", -1),
+                           ("flag2", True), ("flag3", "G0"), ("timestamp", "bad")):
+            with self.subTest(key=key):
+                candidate = {**material, key: value}
+                with self.assertRaises(ValueError):
+                    sofire_z(**candidate)
+        with self.assertRaises(ValueError):
+            extract_sofire_material("short")
+        good = sofire_z(**material, random_hex="A1B2C3")
+        with self.assertRaises(ValueError):
+            extract_sofire_material("00" + good[2:])
 
 
 if __name__ == "__main__":

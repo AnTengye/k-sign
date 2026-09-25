@@ -1,14 +1,16 @@
 """Offline Android client signatures for the Baidu Netdisk task-center flow.
 
-This module never contacts the App or the network. The encrypted SK and account
-UID are private inputs exported once from the same logged-in Android profile.
-It does not generate the Sofire ``z`` value or the HTJ ``jt`` value.
+This module never contacts the App or the network. The encrypted SK, account UID,
+and Sofire material are private inputs exported once from the same logged-in
+Android profile. The claim-probe combines these offline signatures with the
+separate Node/jsdom HTJ generator; this module itself never generates ``jt``.
 """
 
 import base64
 import binascii
 import hashlib
 import re
+import secrets
 
 
 # MD5 of the signing certificate in the verified Baidu Netdisk 13.32.1 APK.
@@ -80,3 +82,73 @@ def native_rchannel(uid, timestamp, channel):
             re.search(r"[\r\n\x00]", channel)):
         raise ValueError("invalid channel")
     return hashlib.md5((RCHANNEL_AK + uid + timestamp + channel).encode("utf-8")).hexdigest()
+
+
+def sofire_z(seed, status, flag1, flag2, flag3, timestamp, random_hex=None):
+    """Recreate Sofire Asc.itb's 60-character value without Android.
+
+    ``seed`` and the four flags are persistent, account/device-bound inputs.
+    They must be kept in private state.  This does not produce the separate
+    HTJ ``jt`` required by the reward endpoint.
+    """
+    if not isinstance(seed, str) or not re.fullmatch(r"[0-9A-F]{32}", seed):
+        raise ValueError("invalid Sofire seed")
+    if any(type(value) is not int or not 0 <= value <= 255
+           for value in (status, flag1, flag2)):
+        raise ValueError("invalid Sofire flags")
+    if not isinstance(flag3, str) or not re.fullmatch(r"[0-9A-F]{2}", flag3):
+        raise ValueError("invalid Sofire status suffix")
+    if not isinstance(timestamp, str) or not re.fullmatch(r"[0-9]{10}", timestamp):
+        raise ValueError("invalid timestamp")
+    instant = int(timestamp)
+    if instant > 0xffffffff:
+        raise ValueError("timestamp is outside Sofire range")
+    if random_hex is None:
+        random_hex = secrets.token_hex(3).upper()
+    if not isinstance(random_hex, str) or not re.fullmatch(r"[0-9A-F]{6}", random_hex):
+        raise ValueError("invalid Sofire nonce")
+
+    shifted = (instant + 0x9AAC0F00) & 0xffffffff
+    clock_hex = f"{instant:08X}"
+    result = [""] * 60
+
+    def put(start, value):
+        result[start:start + len(value)] = value
+
+    put(0, f"{(shifted >> 10) & 0xff:02X}")
+    put(2, "58")
+    for start, offset in ((4, 16), (8, 8), (12, 28), (20, 4),
+                          (24, 0), (30, 24), (36, 12), (40, 20)):
+        put(start, seed[offset:offset + 4][::-1])
+    put(16, f"{ord(seed[16]) ^ status:02X}")
+    put(18, f"{(shifted >> 18) & 0xff:02X}")
+    put(28, f"{ord(seed[10]) ^ flag2:02X}")
+    put(34, f"{ord(seed[6]) ^ flag1:02X}")
+    put(44, random_hex[:2])
+    put(46, clock_hex[4:])
+    put(50, random_hex[2:4])
+    put(52, flag3)
+    put(54, random_hex[4:])
+    put(56, clock_hex[:4])
+    return "".join(result)
+
+
+def extract_sofire_material(z):
+    """Extract stable private inputs from one locally captured official z.
+
+    This is an offline import helper, not a way to reuse a historical dynamic
+    value. The caller must never log the returned material.
+    """
+    if not isinstance(z, str) or not re.fullmatch(r"[0-9A-F]{60}", z):
+        raise ValueError("invalid Sofire value")
+    seed = "".join(z[start:start + 4][::-1]
+                   for start in (24, 20, 8, 36, 4, 40, 30, 12))
+    timestamp = str(int(z[56:60] + z[46:50], 16))
+    material = {"seed": seed, "status": int(z[16:18], 16) ^ ord(seed[16]),
+                "flag1": int(z[34:36], 16) ^ ord(seed[6]),
+                "flag2": int(z[28:30], 16) ^ ord(seed[10]),
+                "flag3": z[52:54]}
+    random_hex = z[44:46] + z[50:52] + z[54:56]
+    if sofire_z(**material, timestamp=timestamp, random_hex=random_hex) != z:
+        raise ValueError("inconsistent Sofire value")
+    return material

@@ -20,6 +20,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+import subprocess
 import sys
 import tempfile
 import time
@@ -27,7 +28,7 @@ import time
 from requests.adapters import HTTPAdapter
 
 from base import BaseSign
-from dupan_signing import native_rand_pair, native_rchannel
+from dupan_signing import native_rand_pair, native_rchannel, sofire_z
 
 
 ORIGIN = "https://pan.baidu.com"
@@ -41,6 +42,28 @@ COOKIE_FIELDS = ("version", "name", "value", "port", "port_specified", "domain",
 
 class DuPanError(Exception):
     """Only fixed text and validated numeric codes may appear in this exception."""
+
+
+def create_htj_token(cuid, user_agent):
+    """Run the official Sofire web SDK in Node/jsdom, without App or browser."""
+    script = Path(__file__).with_name("dupan_htj.js")
+    if not script.is_file():
+        raise DuPanError("缺少纯脚本 HTJ 生成器，未发送领奖请求。")
+    payload = {"cuid": cuid, "userAgent": user_agent,
+               "proxy": os.getenv("SIGN_HTJ_PROXY_DUPAN") or None}
+    environment = {key: os.environ[key] for key in ("PATH", "NODE_PATH") if key in os.environ}
+    try:
+        result = subprocess.run(["node", str(script)], input=json.dumps(payload), text=True,
+                                capture_output=True, timeout=30, env=environment, check=False)
+        data = json.loads(result.stdout) if result.returncode == 0 else None
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        data = None
+    if (not isinstance(data, dict) or not isinstance(data.get("jt"), str) or
+            not 0 < len(data["jt"]) <= 20000 or
+            not isinstance(data.get("version"), str) or
+            not re.fullmatch(r"[0-9]+(?:\.[0-9]+){1,3}", data["version"])):
+        raise DuPanError("纯脚本 HTJ 生成失败，未发送领奖请求。")
+    return data
 
 
 def number(value):
@@ -190,6 +213,8 @@ class DuPanSign(BaseSign):
         self.session_ready = False
         self.locked = False
         self.claim_security = None
+        self.sofire_material = None
+        self.sofire_extras = None
 
     def _load_session(self):
         source = Path(os.getenv("SIGN_AUTH_DUPAN") or self.directory / "auth.json").expanduser()
@@ -246,16 +271,19 @@ class DuPanSign(BaseSign):
                      self.ANSWER: {"ask_id", "answer"},
                      self.GROWTH_TASKS: {"task_from"},
                      self.REPORT: {"task_id", "task_from", "uk"},
-                     self.CLAIM: {"task_id", "task_from", "uk", "action"}}
+                     self.CLAIM: {"task_ids", "task_froms", "uk", "action"}}
         if path not in permitted or set(extra) != permitted[path]:
             raise DuPanError("拒绝访问签到白名单之外的接口或参数。")
         if path == self.CLAIM and (not self.claim_probe or self.claim_security is None or
+                                   self.sofire_material is None or self.sofire_extras is None or
                                    extra["action"] != "receive_award"):
             raise DuPanError("纯脚本领奖只允许显式的一次性实验。")
         if path == self.CLAIM and datetime.now(SHANGHAI).date().isoformat() != self.report.get("answer", {}).get("day"):
             raise DuPanError("领奖实验预检期间发生换日，未发送请求。")
         if path in self.MUTATIONS and (self.read_only or not self.locked or self.mutation_counts.get(path)):
             raise DuPanError("当前运行不允许再次提交该任务动作。")
+        htj = create_htj_token(self.profile["native_static_params"]["cuid"],
+                               self.profile["user_agent"]) if path == self.CLAIM else None
         params = {**self.profile["native_static_params"], **extra,
                   "rand": secrets.token_hex(20), "time": str(int(time.time()))}
         if path == self.CLAIM:
@@ -270,10 +298,19 @@ class DuPanSign(BaseSign):
                     bduss, security["uid"], security["encrypted_sk"], params["time"],
                     static["devuid"], static["version"])
                 params["rchannel"] = native_rchannel(security["uid"], params["time"], static["channel"])
+                params["z"] = sofire_z(**self.sofire_material, timestamp=params["time"])
             except ValueError:
                 raise DuPanError("领奖签名资料无效，未发送请求。") from None
+            params.update({"jt": htj["jt"], "aid": "13655", "ev": "task", "hjs": 1,
+                           "c": static["cuid"], "ver": static["version"],
+                           "ua": self.profile["user_agent"].lower(),
+                           "offlinepackage": json.dumps(self.sofire_extras["offlinepackage"],
+                                                        ensure_ascii=False, separators=(",", ":")),
+                           "themeinfo": self.sofire_extras["themeinfo"]})
+            self.report["htj_sdk_version"] = htj["version"]
         if path in {self.REPORT, self.CLAIM}:
-            payload = "_".join((str(params["task_id"]), str(params["uk"]), params["rand"],
+            identifier = params["task_id"] if path == self.REPORT else params["task_ids"]
+            payload = "_".join((str(identifier), str(params["uk"]), params["rand"],
                                 params["time"], TASK_TOKEN_SALT))
             params["token"] = hashlib.md5(payload.encode()).hexdigest()
         entry = {"path": path, "query_keys": sorted(params), "mutation": path in self.MUTATIONS,
@@ -558,6 +595,37 @@ class DuPanSign(BaseSign):
         except ValueError:
             raise DuPanError("领奖签名资料无效，未发送请求。") from None
         self.claim_security = security
+        source = self.directory / "sofire-material.json"
+        if source.is_symlink() or not source.is_file() or source.stat().st_mode & 0o077:
+            raise DuPanError("纯脚本领奖需要私有 Sofire 材料文件（0600）。")
+        material = read_json(source)
+        static = self.profile["native_static_params"]
+        if (not isinstance(material, dict) or
+                set(material) != {"seed", "status", "flag1", "flag2", "flag3",
+                                  "account_uk_sha256", "cuid_sha256", "version",
+                                  "offlinepackage", "themeinfo"} or
+                material["account_uk_sha256"] != security["account_uk_sha256"] or
+                material["cuid_sha256"] != hashlib.sha256(static["cuid"].encode()).hexdigest() or
+                material["version"] != static["version"] or
+                not isinstance(material["offlinepackage"], dict) or
+                not 1 <= len(material["offlinepackage"]) <= 128 or
+                type(material["themeinfo"]) is not int or
+                not 0 <= material["themeinfo"] <= 1000000000):
+            raise DuPanError("Sofire 材料与账号或设备不匹配，未发送请求。")
+        try:
+            package = json.dumps(material["offlinepackage"], ensure_ascii=False,
+                                 separators=(",", ":"), allow_nan=False)
+        except (TypeError, ValueError):
+            raise DuPanError("客户端包资料格式无效，未发送请求。") from None
+        if len(package) > 4096:
+            raise DuPanError("客户端包资料过长，未发送请求。")
+        self.sofire_material = {key: material[key] for key in
+                                ("seed", "status", "flag1", "flag2", "flag3")}
+        self.sofire_extras = {key: material[key] for key in ("offlinepackage", "themeinfo")}
+        try:
+            sofire_z(**self.sofire_material, timestamp=str(int(time.time())))
+        except ValueError:
+            raise DuPanError("Sofire 材料无效，未发送请求。") from None
 
     def claim_reward_probe(self):
         """One opt-in no-App claim attempt; never called by the daily cron path."""
@@ -578,13 +646,15 @@ class DuPanSign(BaseSign):
                 (self.question_ledger.get("ask_id") != question["ask_id"] or
                  self.question_ledger.get("task_id_str") != task["task_id"])):
             raise DuPanError("当天题目或任务 ID 已变化，停止领奖实验。")
+        if self.question_ledger.get("day") == question["day"] and "claim_probe" in self.question_ledger:
+            raise DuPanError("当天已尝试领奖，不重复生成 HTJ 或提交请求。")
         self._load_claim_security()
         before = self._balances()
         self._save_question_attempt(question, task, "claim_probe")
         response, error = None, None
         try:
-            response = self._request_json(self.CLAIM, {"task_id": task["task_id"],
-                "task_from": task["task_from"], "uk": self.uk, "action": "receive_award"})
+            response = self._request_json(self.CLAIM, {"task_ids": task["task_id"],
+                "task_froms": task["task_from"], "uk": self.uk, "action": "receive_award"})
         except DuPanError as exc:
             error = str(exc)
         after_task = self._growth_task()
