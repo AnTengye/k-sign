@@ -21,6 +21,7 @@ class ClaimService(QuestionService):
         super().__init__(answer_status=1, task_status=6)
         self.claim_apply = True
         self.claim_code = 0
+        self.claim_result = {"addScore": 6, "addGrowScore": 3}
 
     def get(self, url, **kwargs):
         if urlsplit(url).path == DuPanSign.CLAIM:
@@ -29,8 +30,7 @@ class ClaimService(QuestionService):
                 self.task_status = 1
                 self.points += 6
                 self.growth += 3
-            return Response({"errno": self.claim_code,
-                             "result": {"addScore": 6, "addGrowScore": 3}})
+            return Response({"errno": self.claim_code, "result": self.claim_result})
         return super().get(url, **kwargs)
 
     def claims(self):
@@ -58,6 +58,13 @@ class ClaimProbeTests(unittest.TestCase):
 
     def run_probe(self, service):
         sign = DuPanSign(claim_probe=True)
+        sign.session.get = service.get
+        with patch("dupan.create_htj_token", return_value={"jt": "synthetic-jt", "version": "3.5.11"}):
+            sign._exec("")
+        return sign
+
+    def run_daily(self, service):
+        sign = DuPanSign(include_answer=True)
         sign.session.get = service.get
         with patch("dupan.create_htj_token", return_value={"jt": "synthetic-jt", "version": "3.5.11"}):
             sign._exec("")
@@ -107,6 +114,108 @@ class ClaimProbeTests(unittest.TestCase):
         self.assertEqual(first.report["answer"]["status"], "claim_needs_review")
         second = self.run_probe(service)
         self.assertFalse(second.last_run_success)
+        self.assertEqual(len(service.claims()), 1)
+
+    def test_daily_answers_reports_claims_and_does_not_repeat(self):
+        self.configure()
+        service = ClaimService()
+        service.answer_status = -1
+        service.task_status = 0
+        first = self.run_daily(service)
+        self.assertTrue(first.last_run_success)
+        self.assertEqual(first.report["answer"]["status"], "claimed")
+        self.assertEqual(first.report["answer"]["task_status"], 1)
+        self.assertEqual(first.report["answer"]["balance_delta"], {"points": 6, "growth": 3})
+        self.assertEqual(first.report["answer"]["reward_response"], {"points": 6, "growth": 3})
+        self.assertEqual([path for path, _ in service.calls if path in first.MUTATIONS],
+                         [first.ANSWER, first.REPORT, first.CLAIM])
+        self.assertEqual(first.mutation_count, 3)
+        self.assertIn("claim", read_json(first.question_ledger_path))
+        self.assertNotIn("synthetic-jt", json.dumps(first.report))
+        again = self.run_daily(service)
+        self.assertTrue(again.last_run_success)
+        self.assertEqual(again.report["answer"]["status"], "already_claimed")
+        self.assertEqual(again.mutation_count, 0)
+        self.assertEqual(len(service.claims()), 1)
+
+    def test_daily_accepts_server_readback_without_numeric_reward_response(self):
+        self.configure()
+        service = ClaimService()
+        service.claim_result = None
+        sign = self.run_daily(service)
+        self.assertTrue(sign.last_run_success)
+        self.assertEqual(sign.report["answer"]["status"], "claimed_readback_only")
+        self.assertEqual(sign.report["answer"]["reward_response_shape"]["result_type"], "NoneType")
+        self.assertNotIn("reward_response", sign.report["answer"])
+        self.assertEqual(sign.report["answer"]["balance_delta"], {"points": 6, "growth": 3})
+
+    def test_daily_parses_single_item_reward_response(self):
+        self.configure()
+        service = ClaimService()
+        service.claim_result = [{"addScore": 6, "addGrowScore": 3}]
+        sign = self.run_daily(service)
+        self.assertTrue(sign.last_run_success)
+        self.assertEqual(sign.report["answer"]["status"], "claimed")
+        self.assertEqual(sign.report["answer"]["reward_response"], {"points": 6, "growth": 3})
+        self.assertEqual(sign.report["answer"]["reward_response_shape"]["result_type"], "list")
+
+    def test_status_with_claim_material_never_claims(self):
+        self.configure()
+        service = ClaimService()
+        sign = DuPanSign(read_only=True, include_answer=True)
+        sign.session.get = service.get
+        sign._exec("")
+        self.assertTrue(sign.last_run_success)
+        self.assertEqual(sign.report["answer"]["status"], "read_only")
+        self.assertFalse(service.claims())
+
+    def test_daily_rejection_and_manual_probe_share_once_only_ledger(self):
+        self.configure()
+        service = ClaimService()
+        service.claim_apply = False
+        service.claim_code = 8001
+        first = self.run_daily(service)
+        self.assertFalse(first.last_run_success)
+        self.assertEqual(first.report["answer"]["status"], "claim_needs_review")
+        second = self.run_daily(service)
+        self.assertFalse(second.last_run_success)
+        self.assertEqual(second.report["answer"]["status"], "claim_skipped_prior_attempt")
+        self.assertFalse(self.run_probe(service).last_run_success)
+        self.assertEqual(len(service.claims()), 1)
+
+    def test_daily_never_retries_after_manual_probe_or_mismatched_reward(self):
+        self.configure()
+        service = ClaimService()
+        service.claim_apply = False
+        service.claim_code = 8001
+        self.assertFalse(self.run_probe(service).last_run_success)
+        self.assertFalse(self.run_daily(service).last_run_success)
+        self.assertEqual(len(service.claims()), 1)
+
+        service = ClaimService()
+        service.claim_result = {"addScore": 7, "addGrowScore": 3}
+        # A new isolated account/day ledger for the response mismatch case.
+        self.directory = self.source.parent / "mismatch-state"
+        with patch.dict("os.environ", {"SIGN_STATE_DIR_DUPAN": str(self.directory)}):
+            self.configure()
+            first = self.run_daily(service)
+            self.assertFalse(first.last_run_success)
+            self.assertEqual(first.report["answer"]["status"], "claim_needs_review")
+            self.assertFalse(self.run_probe(service).last_run_success)
+        self.assertEqual(len(service.claims()), 1)
+
+    def test_previous_day_probe_does_not_block_new_day_claim(self):
+        self.configure()
+        service = ClaimService()
+        initial = DuPanSign(read_only=True, include_answer=True)
+        initial.session.get = service.get
+        self.assertTrue(initial.login())
+        write_json(initial.question_ledger_path, {
+            "day": "2000-01-01", "ask_id": "1", "task_id_str": "2",
+            "claim_probe": {"status": "attempting"}})
+        sign = self.run_daily(service)
+        self.assertTrue(sign.last_run_success)
+        self.assertEqual(sign.report["answer"]["status"], "claimed")
         self.assertEqual(len(service.claims()), 1)
 
     def test_missing_security_or_non_waiting_task_never_claims(self):

@@ -6,8 +6,8 @@ new Env('百度网盘任务中心签到');
 SIGN_AUTH_DUPAN: 私有登录资料 JSON（兼容 one-tap-capture 格式）。
 或 SIGN_COOKIE_DUPAN + SIGN_CLIENT_DUPAN（静态字段 JSON）+ SIGN_USER_AGENT_DUPAN。
 SIGN_STATE_DIR_DUPAN: 持久目录，青龙默认 /ql/data/dupan，本地默认 data/dupan。
-先执行任务中心签到，再独立完成每日答题与任务上报；默认不领奖。
---claim-probe 是人工触发、最多一次的无 App 参数充分性实验，不在定时流程内。
+先执行任务中心签到，再完成每日答题、任务上报与纯脚本领奖。
+--claim-probe 保留为人工单独核验入口；与每日流程共用当天一次提交防重。
 """
 import argparse
 from contextlib import contextmanager
@@ -215,6 +215,7 @@ class DuPanSign(BaseSign):
         self.claim_security = None
         self.sofire_material = None
         self.sofire_extras = None
+        self.claim_authorized = False
 
     def _load_session(self):
         source = Path(os.getenv("SIGN_AUTH_DUPAN") or self.directory / "auth.json").expanduser()
@@ -274,10 +275,10 @@ class DuPanSign(BaseSign):
                      self.CLAIM: {"task_ids", "task_froms", "uk", "action"}}
         if path not in permitted or set(extra) != permitted[path]:
             raise DuPanError("拒绝访问签到白名单之外的接口或参数。")
-        if path == self.CLAIM and (not self.claim_probe or self.claim_security is None or
+        if path == self.CLAIM and (not self.claim_authorized or self.claim_security is None or
                                    self.sofire_material is None or self.sofire_extras is None or
                                    extra["action"] != "receive_award"):
-            raise DuPanError("纯脚本领奖只允许显式的一次性实验。")
+            raise DuPanError("纯脚本领奖尚未完成一次性预检。")
         if path == self.CLAIM and datetime.now(SHANGHAI).date().isoformat() != self.report.get("answer", {}).get("day"):
             raise DuPanError("领奖实验预检期间发生换日，未发送请求。")
         if path in self.MUTATIONS and (self.read_only or not self.locked or self.mutation_counts.get(path)):
@@ -569,9 +570,17 @@ class DuPanSign(BaseSign):
             result["balance_delta"] = {key: after[key] - before[key] for key in ("points", "growth")}
             task = after_task
         if task["status"] == 6:
-            result["status"] = "waiting_reward"
-            self.pwl("每日答题已正确并上报，任务待领取；纯脚本领奖签名尚未验证。")
-            return False
+            prior_attempt = (self.question_ledger.get("day") == question["day"] and
+                             ("claim" in self.question_ledger or "claim_probe" in self.question_ledger))
+            try:
+                return self._claim_reward(self._question(), task, result, "claim")
+            except DuPanError as exc:
+                result["status"] = ("claim_skipped_prior_attempt" if prior_attempt else
+                                    "claim_needs_review" if "claim" in self.question_ledger else
+                                    "claim_preflight_failed")
+                result["claim_error"] = str(exc)
+                self.pwl("每日答题领奖未确认；当天不会自动重试。")
+                return False
         result["status"] = "already_claimed"
         self.pwl("每日答题任务已完成并领取。")
         return True
@@ -628,7 +637,7 @@ class DuPanSign(BaseSign):
             raise DuPanError("Sofire 材料无效，未发送请求。") from None
 
     def claim_reward_probe(self):
-        """One opt-in no-App claim attempt; never called by the daily cron path."""
+        """Manual no-App claim check, sharing the daily once-only ledger."""
         if not self.claim_probe or self.read_only:
             raise DuPanError("当前模式禁止领奖实验。")
         question, task = self._question(), self._growth_task()
@@ -640,44 +649,78 @@ class DuPanSign(BaseSign):
             result["status"] = "already_claimed_no_probe"
             self.pwl("答题奖励已被领取，无法验证这次纯脚本实验。")
             return False
+        return self._claim_reward(question, task, result, "claim_probe")
+
+    def _claim_reward(self, question, task, result, action):
+        """Submit at most once per day, then verify the same task and balances."""
+        if self.read_only or action not in {"claim", "claim_probe"}:
+            raise DuPanError("当前模式禁止领取答题奖励。")
+        result["day"] = question["day"]
+        result["question_status"] = question["status"]
+        result["task_status"] = task["status"]
+        if question["status"] != 1:
+            raise DuPanError("题目尚未确认答对，不尝试领奖。")
         if task["status"] != 6 or self._home()["signed"] != 1:
             raise DuPanError("答题任务不在当天已签到、待领取状态。")
         if (self.question_ledger.get("day") == question["day"] and
                 (self.question_ledger.get("ask_id") != question["ask_id"] or
                  self.question_ledger.get("task_id_str") != task["task_id"])):
             raise DuPanError("当天题目或任务 ID 已变化，停止领奖实验。")
-        if self.question_ledger.get("day") == question["day"] and "claim_probe" in self.question_ledger:
+        if self.question_ledger.get("day") == question["day"] and (
+                "claim" in self.question_ledger or "claim_probe" in self.question_ledger):
             raise DuPanError("当天已尝试领奖，不重复生成 HTJ 或提交请求。")
         self._load_claim_security()
         before = self._balances()
-        self._save_question_attempt(question, task, "claim_probe")
+        self._save_question_attempt(question, task, action)
         response, error = None, None
         try:
+            self.claim_authorized = True
             response = self._request_json(self.CLAIM, {"task_ids": task["task_id"],
                 "task_froms": task["task_from"], "uk": self.uk, "action": "receive_award"})
         except DuPanError as exc:
             error = str(exc)
+        finally:
+            self.claim_authorized = False
         after_task = self._growth_task()
         after = self._balances()
         result["task_status"] = after_task["status"]
+        if "balance_delta" in result:
+            result["report_balance_delta"] = result.pop("balance_delta")
         result["balance_delta"] = {key: after[key] - before[key] for key in ("points", "growth")}
         if error:
             result["submission_error"] = error
         if after_task["task_id"] != task["task_id"] or after_task["status"] != 1 or error:
             result["status"] = "claim_needs_review"
-            self.pwl("一次性纯脚本领奖实验未确认成功；不会自动重试。")
+            self.pwl("纯脚本领奖未确认成功；当天不会自动重试。")
             return False
         reward = response.get("result") if isinstance(response, dict) else None
-        if not isinstance(reward, dict):
+        result["reward_response_shape"] = {
+            "top_keys": sorted(response) if isinstance(response, dict) else [],
+            "result_type": type(reward).__name__,
+            "data_type": type(response.get("data")).__name__ if isinstance(response, dict) else "NoneType"}
+        for source in ("result", "data"):
+            candidate = response.get(source) if isinstance(response, dict) else None
+            if isinstance(candidate, list) and len(candidate) == 1:
+                candidate = candidate[0]
+            if isinstance(candidate, dict) and {"addScore", "addGrowScore"} <= candidate.keys():
+                expected = {"points": number(candidate["addScore"]),
+                            "growth": number(candidate["addGrowScore"])}
+                result["reward_response"] = expected
+                result["reward_response_source"] = source
+                if expected != result["balance_delta"]:
+                    result["status"] = "claim_needs_review"
+                    self.pwl("领奖响应与到账增量不一致；当天不会自动重试。")
+                    return False
+                break
+        delta = result["balance_delta"]
+        if min(delta.values()) < 0 or sum(delta.values()) <= 0:
             result["status"] = "claim_needs_review"
+            self.pwl("领奖后余额未确认增加；当天不会自动重试。")
             return False
-        expected = {"points": number(reward.get("addScore")),
-                    "growth": number(reward.get("addGrowScore"))}
-        result["reward_response"] = expected
-        confirmed = (expected == result["balance_delta"] and sum(expected.values()) > 0)
-        result["status"] = "claimed" if confirmed else "claim_needs_review"
-        self.pwl("一次性纯脚本领奖已读回到账。" if confirmed else "领奖响应与余额不一致；不会自动重试。")
-        return confirmed
+        result["status"] = "claimed" if "reward_response" in result else "claimed_readback_only"
+        self.pwl("纯脚本领奖已读回到账。" if "reward_response" in result else
+                 "纯脚本领奖已读回到账；响应未提供可核对的奖励明细。")
+        return True
 
     def _exec(self, content):
         # Keep one lock through requests, submission ledger and CookieJar persistence.

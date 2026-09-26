@@ -70,7 +70,7 @@ class DuPanAnswerTests(unittest.TestCase):
         sign = self.run_answer(service)
         self.assertTrue(sign.sign_success)
         self.assertFalse(sign.last_run_success)
-        self.assertEqual(sign.report["answer"]["status"], "waiting_reward")
+        self.assertEqual(sign.report["answer"]["status"], "claim_preflight_failed")
         self.assertEqual([path for path, _ in service.question_mutations()], [sign.ANSWER, sign.REPORT])
         self.assertEqual(sign.mutation_count, 2)
         answer_params = service.question_mutations()[0][1]["params"]
@@ -101,7 +101,7 @@ class DuPanAnswerTests(unittest.TestCase):
         service = QuestionService(answer_status=1)
         sign = self.run_answer(service)
         self.assertEqual([path for path, _ in service.question_mutations()], [sign.REPORT])
-        self.assertEqual(sign.report["answer"]["status"], "waiting_reward")
+        self.assertEqual(sign.report["answer"]["status"], "claim_preflight_failed")
 
     def test_report_timeout_does_not_repeat_after_state_change(self):
         service = QuestionService(answer_status=1)
@@ -109,7 +109,7 @@ class DuPanAnswerTests(unittest.TestCase):
         first = self.run_answer(service)
         self.assertEqual(first.report["answer"]["status"], "report_needs_review")
         second = self.run_answer(service)
-        self.assertEqual(second.report["answer"]["status"], "waiting_reward")
+        self.assertEqual(second.report["answer"]["status"], "claim_preflight_failed")
         self.assertEqual([path for path, _ in service.question_mutations()], [first.REPORT])
 
     def test_read_only_and_already_claimed_never_mutate(self):

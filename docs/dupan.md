@@ -1,11 +1,10 @@
 # 百度网盘 App 任务中心签到与每日答题
 
 `dupan.py` 对应 App「我的 → 用户名旁 VIP → 成长值任务 / 去签到 → 任务中心」。
-每日先签到，再做判断题并上报成长任务。三个已验证的变更接口是
-`/coins/taskcenter/signin`、`/act/v2/membergrowv2/answerquestion` 和 `/api/taskscore/tasksave`。
-旧 `/rest/2.0/membership/level?method=signin` 仍已移除。上报后的状态 `6`
-是“待领取”，不等于奖励到账。纯脚本领奖参数生成已接入人工 `--claim-probe`，
-但尚未获得服务端成功验收；每日定时任务仍不会自动领奖，并在状态 `6` 时返回非零。
+每日先签到，再做判断题、上报成长任务并领取奖励。四个变更接口是
+`/coins/taskcenter/signin`、`/act/v2/membergrowv2/answerquestion`、`/api/taskscore/tasksave`
+和 `/api/taskscore/antisave`。旧 `/rest/2.0/membership/level?method=signin` 仍已移除。
+上报后的状态 `6` 是“待领取”；领奖读回状态 `1` 且余额增加才视为到账。
 
 ## 验证范围
 
@@ -67,8 +66,8 @@ python3 dupan.py --import-auth /private/path/baidu-auth.json
 - `auth.json`：离线导入的初始资料。
 - `session.json`：刷新后的 CookieJar，保留 Cookie 域、路径、过期时间等属性。
 - `attempt-<账号摘要>.json`：当天提交记录，不包含账号明文。
-- `question-<账号摘要>.json`：当天答题和上报的独立提交记录；每次请求前先落盘，避免超时后重放。
-- `reports/*.json`：仅含接口路径、参数名称、状态、余额差值、业务码和时间的脱敏报告。
+- `question-<账号摘要>.json`：当天答题、上报和领奖的独立提交记录；每次请求前先落盘，避免超时后重放。
+- `reports/*.json`：仅含接口路径、参数名称、状态、余额差值、业务码、奖励响应的安全摘要和时间的脱敏报告。
 - `claim-signing.json`、`sofire-material.json`：领奖所需的同账号、同设备私有材料；均为 `0600`，不属于订阅仓库或环境变量。
 
 运行全过程加互斥锁。文件为 `0600`，专用目录为 `0700`。
@@ -84,22 +83,23 @@ python3 dupan.py --import-auth /private/path/baidu-auth.json
 5. 成功、业务拒绝或网络超时后均只读回状态与余额；超时不能当作确定失败自动重发。
 6. 签到成功或已签到后，读取当天题目及 `task_type=169` 成长任务。仅接受服务端给出的判断题答案和当天题目 ID。
 7. 题目未答时提交最多一次；读回 `answer_status=1` 后，用当前任务 ID、UK、新 `rand/time` 和官方 MD5 公式上报最多一次，读回任务状态。
-8. 状态 `1` 才视为奖励已领取；状态 `6` 明确记为 `waiting_reward`，返回非零，不调用未经验证的领奖接口。
-9. 原子保存 CookieJar 和脱敏报告。重启后仍尊重当天各动作的提交记录。
+8. 任务状态 `6`、题目已正确且当天已签到时，核对同账号/设备私有材料，先记录当天 `claim` 尝试，再用纯脚本生成新鲜 `rand/rand2/rchannel/z/jt`，发送最多一次领奖请求。人工 `--claim-probe` 与每日 `claim` 共用防重判定，任一已尝试都不会重发。
+9. 领奖后读回同一个任务为状态 `1`，积分/成长值非负且至少一项增加；响应含 `addScore/addGrowScore` 时还必须与余额增量一致。响应不含数值奖励时明确记为 `claimed_readback_only`，保留响应结构摘要，不冒称逐字段一致。
+10. 原子保存 CookieJar 和脱敏报告。重启后仍尊重当天各动作的提交记录。
 
 HTTP 层关闭自动重试，禁止重定向，启用 HTTPS 证书校验。
 不会隐式继承宿主机 `HTTP_PROXY/HTTPS_PROXY`，需要代理时使用上表明确配置。
 跨日、缺失字段、状态矛盾、凭证失效、余额读回失败均返回非零退出码；遇到当天已签到属于正常跳过，仍继续检查答题。
-答题或上报超时后，下一次只读回服务端状态，不会自动重发同一动作。
+答题、上报或领奖超时后，下一次只读回服务端状态，不会自动重发同一动作。
 
 ```bash
 python3 dupan.py --status       # 签到与答题只读状态，0 变更，无通知
-python3 dupan.py --no-notify    # 签到、答题、上报；关闭本次通知
+python3 dupan.py --no-notify    # 签到、答题、上报、领奖；关闭本次通知
 python3 dupan.py                # 同上，使用 k-sign 通知
 python3 dupan.py --sign-only    # 仅签到，应急回退开关
 ```
 
-签到与答题使用 k-sign 已有 Python 依赖和 BaseSign。人工领奖实验还需要 Node、`jsdom`
+签到与答题使用 k-sign 已有 Python 依赖和 BaseSign。领奖还需要 Node、`jsdom`
 和对官方 `https://sofire.bdstatic.com/js/dfxaf3.js`、`https://sfp.safe.baidu.com` 的 HTTPS 出口；
 不需要 canvas、App、WebView、ADB、模拟器或浏览器进程。SDK 从官方地址实时获取，未复制进 Git。
 在青龙完成依赖和凭证配置后，沿用 `task AnTengye_k-sign_master/dupan.py`。
@@ -118,15 +118,21 @@ python3 dupan.py --sign-only    # 仅签到，应急回退开关
 
 现已从已登录的本机模拟器**一次性**提取同账号的网络签名材料，保存在 Git 忽略的私有目录，未放入源码或青龙订阅仓库。对已保存的成功领奖请求进行离线校验：`dupan_signing.py` 仅用 `BDUSS`、原生账号 UID、加密 SK、时间、设备 ID、版本和已验证 APK 的签名证书摘要，就能逐值重现其 `rand/rand2`；`rchannel` 也按客户端公式逐值匹配。此校验不等于服务端接受缺少其他字段的领奖请求。
 
-青龙映射私有目录中的 `/ql/data/dupan/claim-signing.json` 为 `0600`，只含 `uid`、`encrypted_sk`、`account_uk_sha256`。它不属于 `SIGN_AUTH_DUPAN`、订阅仓库或青龙环境变量；不要复制进 Git。保留默认 `08:20` 定时任务行为不变：签到、答题、上报后状态 `6` 仍明确报待领取，**不会自动领奖**。
+青龙映射私有目录中的 `/ql/data/dupan/claim-signing.json` 为 `0600`，只含 `uid`、`encrypted_sk`、`account_uk_sha256`。它不属于 `SIGN_AUTH_DUPAN`、订阅仓库或青龙环境变量；不要复制进 Git。此阶段保留默认 `08:20` 定时任务行为不变：签到、答题、上报后状态 `6` 仍明确报待领取，**当时不会自动领奖**。
 
-新命令 `python3 dupan.py --claim-probe` 是人工触发的一次性实验，不在脚本头部声明独立定时任务，也不会先签到或重复答题。只有读回当天题目正确、任务状态 `6`、已签到、账号与私有签名资料一致且当天未试过时，才发送最多一次领奖请求。请求前先落盘当天提交记录；拒绝、超时或读回不一致均不自动重试，只有任务状态 `1`、奖励响应和积分/成长值增量一致才报告成功。
+新命令 `python3 dupan.py --claim-probe` 最初是人工触发的一次性实验，不在脚本头部声明独立定时任务，也不会先签到或重复答题。只有读回当天题目正确、任务状态 `6`、已签到、账号与私有签名资料一致且当天未试过时，才发送最多一次领奖请求。请求前先落盘当天提交记录；拒绝、超时或读回不一致均不自动重试。2026-09-26 起它与每日入口共享防重判定，领奖成功但响应不含奖励数值时会明确标记为仅经服务端状态和余额读回确认。
 
 2026-09-24 当天已经使用 App 参数领取，无法再验证首次领奖。2026-09-25 已按上述条件执行了唯一一次无 App 实验：青龙 08:20 完成签到、答题和上报，领奖前题目状态 `1`、任务状态 `6`；08:42 的 `/api/taskscore/antisave` 返回 HTTP `200`、业务码 `8001`。脚本只发送这一次领奖请求，读回仍为任务状态 `6`，积分与成长值均 `+0`，当天 `claim_probe` 记录保留，不重试、不用 App 补领。脱敏证据位于私有持久目录 `reports/20260925-004201-cd0a4176.json`。
 
 当前官方脚本将 `8001` 标为 `HTJError`。成功的历史请求另有 `z/jt/hjs` 等参数，但这个业务码不能单独证明哪个字段必需。离线研究从已验证 APK 的 Sofire `Asc.itb` 还原 `z` 的字段布局，`dupan_signing.py` 的生成器对 12 份私有历史样本均逐字复现。稳定设备材料已存入 Git 忽略的私有 `sofire-material.json`，并在运行时核对账号与设备摘要。
 
 2026-09-25 下午定位到本机代理规则将两个反爬域名直连，导致 TLS 握手失败。在 Clash Verge 当前订阅的自定义规则中，仅为 `sofire.bdstatic.com` 与 `sfp.safe.baidu.com` 增加 `AK` 出口并重新激活；经代理两域名均可访问，青龙容器可通过 `host.docker.internal:7890` 使用该出口。官方 SDK v3.5.11 在青龙的 Node 22 + `jsdom` 30 中用当前私有设备资料独立生成了非空 `jt`（只核对长度，不输出 token），未启动 App、模拟器、ADB 或浏览器。再次逐键比对历史成功请求后，人工领奖路径改用实际的 `task_ids/task_froms`，并合入新鲜 `z/jt/aid/ev/hjs/c/ver/ua`、客户端包 `offlinepackage/themeinfo` 与已有签名字段；客户端包信息只在私有文件中。**这只证明本地参数生成与传输链路，尚未证明服务端接受领奖**。9 月 25 日已有一次失败的领奖提交记录，不清除、不重试；须在下一个符合条件且无 `claim_probe` 记录的日期，人工只执行一次并读回状态和奖励，再决定是否接入每日任务。
+
+## 2026-09-26 纯脚本领奖验收与每日接入
+
+青龙 08:20 完成当天签到、答题和上报后，人工只执行一次 `--claim-probe`：事前题目状态 `1`、任务状态 `6`，当天没有领奖记录，官方 SDK 通过容器代理生成非空 `jt`。纯脚本 `/api/taskscore/antisave` 返回 HTTP `200`、业务码 `0`；服务端任务读回 `6→1`，积分 `+6`、成长值 `+3`。本轮没有启动 App、模拟器、ADB 参数服务或浏览器，也没有第二次领奖提交。私有脱敏报告为 `reports/20260926-004240-c3f1dfbb.json`。
+
+该版实验脚本只保存了业务码和状态/余额增量，没有保存领奖响应的安全摘要；因而**本次不能逐字段核对响应中的奖励数值**。历史同任务的 App 参数成功响应曾记录 `addScore=6`、`addGrowScore=3`，与本次到账一致，但不能代替本次响应。实验版因此退出码为 `1`、状态 `claim_needs_review`，不是请求被拒绝或奖励未到账。接入每日流程后，脚本在服务端状态 `1` 与正向余额增量均确认时成功；如本次响应包含可解析的奖励数值，仍强制核对一致性，否则报告 `claimed_readback_only` 和脱敏响应结构。该接受标准只基于服务端读回，不能被表述为响应数值已核对。
 
 ## 2026-09-08 迁移验收
 
