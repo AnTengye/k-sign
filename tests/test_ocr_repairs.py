@@ -1,5 +1,6 @@
 import base64
 import html
+import io
 import json
 import os
 import threading
@@ -82,11 +83,84 @@ class RuntimeRepairTests(unittest.TestCase):
         signer.base_url = "https://example.test"
         signer.pwl = Mock()
         signer.session = Mock()
-        signer.session.get.return_value = self._response("<html>签到页面</html>")
-        for message, expected in (("必须绑定邮箱后才能签到", "绑定邮箱"), ("验证码错误", "腾讯滑块")):
+        signer.session.get.return_value = self._response(self._ljd_page())
+        for message, expected in (("必须绑定邮箱后才能签到", "绑定邮箱"), ("验证码错误", "腾讯滑块"),
+                                  ("今日未回复任何帖子，无法签到！", "今日先回复")):
             signer.session.post.return_value = self._response(f"<html>{message} 今日已签到排行榜</html>")
             self.assertFalse(signer.sign())
             self.assertIn(expected, signer.pwl.call_args.args[0])
+
+    @staticmethod
+    def _ljd_page(signed=False, captcha=False):
+        state = "今天已签到" if signed else "今天未签到"
+        return (f'<table><tr><td>您累计已签到：<b>37</b>天【<span>{state}</span>】'
+                '今日已签到：<b>35000</b>人</td></tr><tr><td>今天已签到</td></tr></table>'
+                + ('<script>qdCaptchaStart("pc")</script>' if captcha else ''))
+
+    def test_ljd_uses_account_state_and_skips_browser_for_already_signed(self):
+        import ljd
+
+        signer = ljd.LJDSign.__new__(ljd.LJDSign)
+        signer.base_url = "https://example.test"
+        signer.session, signer.pwl, signer._tencent_ticket = Mock(), Mock(), Mock()
+        self.assertIsNone(signer._sign_state('<td>今日已签到排行榜：今天已签到</td>'))
+        self.assertFalse(signer._sign_state(self._ljd_page()))
+        signer.session.get.return_value = self._response(self._ljd_page(signed=True, captcha=True))
+        self.assertTrue(signer.sign())
+        signer._tencent_ticket.assert_not_called()
+        signer.session.post.assert_not_called()
+
+    def test_ljd_stops_before_post_for_missing_or_fallback_captcha_ticket(self):
+        import ljd
+
+        signer = ljd.LJDSign.__new__(ljd.LJDSign)
+        signer.base_url = "https://example.test"
+        signer.session, signer.pwl, signer._tencent_ticket = Mock(), Mock(), Mock()
+        signer.session.get.return_value = self._response(self._ljd_page(captcha=True))
+        for result in (None, {}, {"ticket": "fixture", "randstr": ""},
+                       {"ticket": "trerror_fixture", "randstr": "fixture"}):
+            signer._tencent_ticket.return_value = result
+            self.assertFalse(signer.sign())
+        signer.session.post.assert_not_called()
+
+    def test_ljd_submits_current_ticket_once_and_requires_state_readback(self):
+        import ljd
+
+        signer = ljd.LJDSign.__new__(ljd.LJDSign)
+        signer.base_url = "https://example.test"
+        signer.session, signer.pwl = Mock(), Mock()
+        signer._tencent_ticket = Mock(return_value={"ticket": "fixture-ticket", "randstr": "fixture-rand"})
+        signer.session.post.return_value = self._response("签到成功！今日已签到排行榜")
+        for signed in (False, True):
+            signer.session.get.side_effect = [self._response(self._ljd_page(captcha=True)), self._response(self._ljd_page(signed=signed))]
+            signer.session.post.reset_mock()
+            self.assertEqual(signed, signer.sign())
+            signer.session.post.assert_called_once()
+            data = signer.session.post.call_args.kwargs["data"]
+            self.assertEqual(("fixture-ticket", "fixture-rand"), (data["hycode"], data["hyrandstr"]))
+
+    def test_ljd_slider_matches_sprite_crop_and_converts_to_browser_distance(self):
+        import ljd
+        import numpy as np
+        from PIL import Image
+
+        random = np.random.default_rng(42)
+        target = random.integers(0, 256, (40, 40, 3), dtype=np.uint8)
+        background = np.zeros((140, 300, 3), dtype=np.uint8)
+        background[40:80, 160:200] = target
+        sprite = np.zeros((100, 200, 3), dtype=np.uint8)
+        sprite[16:56, 12:52] = target
+        buffers = []
+        for pixels in (background, sprite):
+            buf = io.BytesIO()
+            Image.fromarray(pixels).save(buf, format="PNG")
+            buffers.append(buf.getvalue())
+        piece = {"image": "fixture", "size": "100px 50px", "pos": "-6px -8px", "w": 20, "h": 20, "left": 10, "top": 20}
+        meta = {"bg": {"w": 150}, "items": [piece]}
+        self.assertAlmostEqual(70, ljd.LJDSign._tencent_slider_distance(meta, *buffers), delta=1)
+        piece["top"] = 60
+        with self.assertRaises(ValueError):
+            ljd.LJDSign._tencent_slider_distance(meta, *buffers)
 
     def test_djgame_claims_rewards_in_prerequisite_order_and_stops_on_database_error(self):
         import djgame

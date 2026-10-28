@@ -4,10 +4,13 @@ cron: 0 15 18 * * *
 new Env('2048签到');
 """
 import datetime
+import io
+import math
 import os
 import random
 import re
-from urllib.parse import urljoin
+import time
+from urllib.parse import unquote, urljoin, urlsplit
 
 from scrapy import Selector
 
@@ -115,6 +118,13 @@ class LJDSign(BaseSign):
         if page.status_code != 200:
             self.pwl(f"签到页面请求失败：HTTP {page.status_code}")
             return False
+        state = self._sign_state(page.text)
+        if state is True:
+            self.pwl("今天已签到")
+            return True
+        if state is None:
+            self.pwl("无法读取当前账号签到状态，请检查登录状态或页面结构")
+            return False
         headers = {
             "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
             "accept-language": "zh-CN,zh;q=0.9",
@@ -142,25 +152,185 @@ class LJDSign(BaseSign):
             "hycode": "",
             "hyrandstr": "",
         }
+        if "qdCaptchaStart" in page.text:
+            ticket = self._tencent_ticket()
+            if not self._valid_ticket(ticket):
+                self.pwl("未取得有效腾讯滑块票据，停止提交签到")
+                return False
+            data.update(hycode=ticket["ticket"], hyrandstr=ticket["randstr"])
         sign_resp = self.session.post(f"{self.base_url}/hack.php?H_name=qiandao&", headers=headers, data=data)
         if sign_resp.status_code == 200:
             if "必须绑定邮箱后才能签到" in sign_resp.text:
                 self.pwl("签到失败：站点要求先绑定邮箱")
                 return False
-            if any(message in sign_resp.text for message in ("请完成滑块验证", "验证码不正确", "验证码错误")):
-                self.pwl("签到失败：需要完成站点腾讯滑块验证，普通 OCR 无法提供 ticket/randstr")
+            if "今日未回复任何帖子" in sign_resp.text:
+                self.pwl("签到失败：站点要求今日先回复一个帖子")
                 return False
-            resp_selector = Selector(response=sign_resp)
-            success_result = resp_selector.re(r"签到成功|已经签到|今日已签到")
-            if success_result is not None and len(success_result) > 0:
-                self.session.get(f"{self.base_url}/search.php")
-                self.pwl(success_result[0])
+            if any(message in sign_resp.text for message in ("请完成滑块验证", "验证码不正确", "验证码错误", "滑块验证失败")):
+                self.pwl("签到失败：站点拒绝腾讯滑块票据")
+                return False
+            confirmed = self.session.get(f"{self.base_url}/hack.php?H_name=qiandao")
+            if confirmed.status_code == 200 and self._sign_state(confirmed.text) is True:
+                self.pwl("签到成功，已回读当前账号状态")
                 return True
-            self.pwl("签到响应未包含可确认的成功信息")
+            self.pwl("签到未确认：当前账号状态没有变为已签到")
         else:
             self.pwl(f"签到请求失败：HTTP {sign_resp.status_code}")
         # //*[@id="scbar_form"]/input[2]/@value
         return False
+
+    @staticmethod
+    def _sign_state(html):
+        # 排行榜及“今日已签到人数”不代表当前账号的签到结果。
+        summary = Selector(text=html).xpath('//td[text()[contains(., "您累计已签到")]]')
+        text = ''.join(summary.xpath('.//text()').getall())
+        match = re.search(r"【\s*(今天已签到|今天未签到)\s*】", text)
+        return match.group(1) == "今天已签到" if match else None
+
+    @staticmethod
+    def _valid_ticket(result):
+        return (isinstance(result, dict)
+                and isinstance(result.get("ticket"), str) and bool(result["ticket"])
+                and isinstance(result.get("randstr"), str) and bool(result["randstr"])
+                and not result["ticket"].startswith(("trerror_", "terror_")))
+
+    @staticmethod
+    def _tencent_slider_distance(meta, background_bytes, sprite_bytes):
+        import ddddocr
+        from PIL import Image
+
+        piece_meta = next(item for item in meta["items"]
+                          if item["image"] != "none" and abs(item["w"] - item["h"]) < 1)
+        sprite = Image.open(io.BytesIO(sprite_bytes))
+        background = Image.open(io.BytesIO(background_bytes))
+        sprite_scale = float(piece_meta["size"].split()[0].removesuffix("px")) / sprite.width
+        background_scale = meta["bg"]["w"] / background.width
+        left, top = [-float(value.removesuffix("px")) / sprite_scale for value in piece_meta["pos"].split()]
+        piece = sprite.crop((round(left), round(top),
+                             round(left + piece_meta["w"] / sprite_scale),
+                             round(top + piece_meta["h"] / sprite_scale)))
+        piece = piece.resize((round(piece_meta["w"] / background_scale), round(piece_meta["h"] / background_scale)))
+        encoded = io.BytesIO()
+        piece.save(encoded, format="PNG")
+        matcher = ddddocr.DdddOcr(det=False, ocr=False, show_ad=False)
+        match = matcher.slide_match(encoded.getvalue(), background_bytes, simple_target=True)
+        x, y, _, _ = match["target"]
+        distance = x * background_scale - piece_meta["left"]
+        if abs(y * background_scale - piece_meta["top"]) > 3 or not 0 < distance < meta["bg"]["w"] - piece_meta["w"]:
+            raise ValueError("滑块定位结果超出有效范围")
+        return distance
+
+    def _tencent_ticket(self):
+        try:
+            from playwright.sync_api import sync_playwright, TimeoutError as BrowserTimeout
+            from requests.utils import select_proxy
+        except ImportError:
+            self.pwl("腾讯滑块需要 Playwright 和 Chromium，请安装 requirements.txt 并执行 python3 -m playwright install --with-deps --only-shell chromium")
+            return None
+
+        try:
+            with sync_playwright() as playwright:
+                settings = self.session.merge_environment_settings(self.base_url, {}, False, None, None)
+                proxy_url = select_proxy(self.base_url, settings["proxies"])
+                proxy = None
+                if proxy_url:
+                    parsed = urlsplit(proxy_url)
+                    proxy = {"server": f"{parsed.scheme}://{parsed.hostname}" + (f":{parsed.port}" if parsed.port else "")}
+                    if parsed.username:
+                        proxy.update(username=unquote(parsed.username), password=unquote(parsed.password or ""))
+                browser = playwright.chromium.launch(headless=True, proxy=proxy, args=["--disable-dev-shm-usage"])
+                try:
+                    context = browser.new_context(user_agent=self.session.headers.get("User-Agent", self.user_agent),
+                                                  locale="zh-CN", timezone_id="Asia/Shanghai",
+                                                  viewport={"width": 1280, "height": 900})
+                    context.add_cookies([
+                        {"name": c.name, "value": c.value, "domain": c.domain or self.url_info.hostname,
+                         "path": c.path or "/", "secure": c.secure}
+                        for c in self.session.cookies if c.expires is None or c.expires > time.time()
+                    ])
+                    page = context.new_page()
+                    page.set_default_timeout(15000)
+                    images, verifications = {}, []
+
+                    def remember(response):
+                        path = urlsplit(response.url).path
+                        if path == "/cap_union_new_getcapbysig":
+                            images[response.url] = response
+                        elif path == "/cap_union_new_verify":
+                            verifications.append(response)
+
+                    page.on("response", remember)
+                    page.on("dialog", lambda dialog: dialog.dismiss())
+                    page.goto(f"{self.base_url}/hack.php?H_name=qiandao", wait_until="domcontentloaded", timeout=45000)
+                    notice = page.locator("#pwDomainNoticeBtn")
+                    if notice.is_visible():
+                        notice.click()
+                    page.wait_for_function("typeof qdCaptchaStart === 'function' && typeof TencentCaptcha === 'function'")
+                    # 使用站点当前 SDK，只接管成功回调；票据仍由腾讯签发。
+                    page.evaluate("""() => {
+                        window.__signCaptchaResult = null;
+                        qdDoSubmit = (type, ticket, randstr) => { window.__signCaptchaResult = {ticket, randstr}; };
+                        document.querySelector('form[name="form2"] input[name="qdxq"][value="shuai"]').checked = true;
+                        qdCaptchaStart('pc');
+                    }""")
+                    for attempt in range(2):
+                        page.wait_for_function("!!window.__signCaptchaResult || !!document.querySelector('#tcaptcha_iframe_dy')")
+                        immediate = page.evaluate("window.__signCaptchaResult")
+                        if immediate:
+                            return immediate if self._valid_ticket(immediate) else None
+                        page.locator("#tcaptcha_iframe_dy").wait_for(state="visible")
+                        frame = page.locator("#tcaptcha_iframe_dy").element_handle().content_frame()
+                        frame.locator(".tc-slider-normal").wait_for(state="visible")
+                        meta = frame.evaluate("""() => {
+                            const read = e => { const s=getComputedStyle(e); return {image:s.backgroundImage,
+                                size:s.backgroundSize,pos:s.backgroundPosition,w:parseFloat(s.width),
+                                h:parseFloat(s.height),left:parseFloat(s.left),top:parseFloat(s.top)}; };
+                            return {bg:read(document.querySelector('#slideBg')),
+                                items:[...document.querySelectorAll('.tc-fg-item')].map(read)};
+                        }""")
+                        piece = next(item for item in meta["items"] if item["image"] != "none" and abs(item["w"] - item["h"]) < 1)
+
+                        def image_bytes(css):
+                            url = css[4:-1].strip('\"\'')
+                            for _ in range(30):
+                                if url in images:
+                                    return images[url].body()
+                                page.wait_for_timeout(100)
+                            if url not in images:
+                                raise ValueError("验证码图片尚未加载")
+
+                        distance = self._tencent_slider_distance(meta, image_bytes(meta["bg"]["image"]), image_bytes(piece["image"]))
+                        box = frame.locator(".tc-slider-normal").bounding_box()
+                        x, y = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
+                        previous = len(verifications)
+                        page.mouse.move(x, y)
+                        page.mouse.down()
+                        for step in range(1, 41):
+                            page.mouse.move(x + distance * (1 - math.cos(math.pi * step / 40)) / 2, y)
+                            page.wait_for_timeout(25)
+                        page.mouse.up()
+                        try:
+                            page.wait_for_function("!!window.__signCaptchaResult", timeout=20000)
+                        except BrowserTimeout:
+                            code = verifications[-1].json().get("errorCode") if len(verifications) > previous else None
+                            self.pwl(f"腾讯滑块未通过，错误码：{code if str(code).isdigit() else '未收到验证结果'}")
+                            if str(code) == "50" and attempt == 0:
+                                old_background = frame.locator("#slideBg").evaluate("e => getComputedStyle(e).backgroundImage")
+                                frame.locator("#reload").click()
+                                frame.wait_for_function("old => getComputedStyle(document.querySelector('#slideBg')).backgroundImage !== old", arg=old_background)
+                                continue
+                            return None
+                        result = page.evaluate("window.__signCaptchaResult")
+                        if self._valid_ticket(result):
+                            self.pwl("腾讯滑块验证通过")
+                            return result
+                        return None
+                finally:
+                    browser.close()
+        except Exception as error:
+            # Playwright 异常可能包含带签名的 URL，不输出原始异常或票据。
+            self.pwl(f"腾讯滑块处理失败（{type(error).__name__}），请检查浏览器依赖及网络")
+        return None
 
     def auto_reply(self) -> bool:
         target, title = self.get_target()

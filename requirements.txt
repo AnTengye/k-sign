@@ -6,3 +6,4 @@ Pillow==11.2.1
 pyaes==1.6.1
 Requests==2.32.3
 scrapy==2.13.1
+playwright==1.64.1

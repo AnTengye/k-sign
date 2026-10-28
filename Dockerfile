@@ -22,4 +22,6 @@ RUN python3 -m pip install \
         --no-cache-dir \
         --disable-pip-version-check \
         -r /tmp/k-sign-requirements.txt \
+    && python3 -m playwright install --with-deps --only-shell chromium \
+    && rm -rf /var/lib/apt/lists/* \
     && rm -f /tmp/k-sign-requirements.txt

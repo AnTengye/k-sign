@@ -128,29 +128,19 @@ class SiteRepairTests(unittest.TestCase):
 
             def get(self, url, **kwargs):
                 self.gets.append(url)
-                return FakeResponse(status_code=200, text="")
+                state = "今天已签到" if self.posts else "今天未签到"
+                return FakeResponse(status_code=200, text=f'<td>您累计已签到：37天【<span>{state}</span>】</td>')
 
             def post(self, url, **kwargs):
                 self.posts.append(url)
                 return FakeResponse(status_code=200, text="签到成功")
 
-        class FakeSelector:
-            def __init__(self, response=None, **kwargs):
-                pass
-
-            def re(self, pattern):
-                return ["签到成功"]
-
         signer = ljd.LJDSign.__new__(ljd.LJDSign)
         signer.base_url = "https://www.epl80.net"
         signer.session = FakeSession()
         signer.pwl = lambda msg: None
-        original_selector = ljd.Selector
-        ljd.Selector = FakeSelector
-        try:
-            self.assertTrue(signer.sign())
-        finally:
-            ljd.Selector = original_selector
+        signer._sign_state = lambda text: "今天已签到" in text
+        self.assertTrue(signer.sign())
         self.assertEqual("https://www.epl80.net/hack.php?H_name=qiandao", signer.session.gets[0])
         self.assertNotIn("/2048/", signer.session.posts[0])
 
