@@ -4,7 +4,10 @@ cron: 0 6 8 * * *
 new Env('老王论坛签到');
 """
 import base64
+import json
+import math
 import os
+import re
 import time
 
 from scrapy import Selector
@@ -30,19 +33,60 @@ class LaoWangSSign(BaseSign):
         if times == 0:
             self.pwl("滑动验证错误次数过多")
             return ""
+        if not getattr(self, "_slider_secret", None):
+            script = self.session.get(f"{self.base_url}/captcha/tn_code.js")
+            match = re.search(r"var\s+hmacSecret\s*=\s*['\"]([^'\"]+)['\"]", script.text)
+            if script.status_code != 200 or not match:
+                self.pwl("无法获取当前滑块校验协议")
+                return ""
+            self._slider_secret = match.group(1)
         # /captcha/tncode.php?t=0.39280096330223313
         resp = self.session.get(f"{self.base_url}/captcha/tncode.php?t=0.{self.login_t}")
         # 读取webp图片
         if resp.status_code == 200:
             width = slidecode.get_slide_width(resp.content)
-            check_resp = self.session.get(f"{self.base_url}/captcha/check.php?tn_r={width}")
-            if check_resp.status_code == 200 and "error" not in check_resp.text:
+            if width is None:
+                self.pwl("未识别到滑块位置")
+                return self.fetch_index(times - 1)
+            time.sleep(1.1)
+            payload = self._slider_payload(width, self._slider_secret)
+            check_resp = self.session.post(f"{self.base_url}/captcha/check.php", data=payload)
+            if check_resp.status_code == 200 and "_ok" in check_resp.text:
                 return check_resp.text
-            self.pwl(f"滑动验证失败:{check_resp.text}")
+            self.pwl(f"滑动验证失败:HTTP {check_resp.status_code} {check_resp.text[:120]}")
             return self.fetch_index(times - 1)
         else:
             self.pwl("滑动验证失败")
         return self.fetch_index(times - 1)
+
+    @staticmethod
+    def _slider_payload(width, secret):
+        # Match the track summary, XOR encoding and FNV-1a signature used by tn_code.js.
+        track = [{"x": width * (1 - math.cos(math.pi * i / 31)) / 2,
+                  "y": math.sin(i * math.pi / 10), "t": i * 35} for i in range(32)]
+        speeds, directions = [], []
+        distance = 0
+        for previous, current in zip(track, track[1:]):
+            dx, dy = current["x"] - previous["x"], current["y"] - previous["y"]
+            dt = current["t"] - previous["t"]
+            segment = math.hypot(dx, dy)
+            distance += segment
+            speeds.append(segment / dt)
+            directions.append(math.atan2(dy, dx))
+        average = sum(speeds) / len(speeds)
+        summary = {"valid": True, "points": len(track), "totalTime": track[-1]["t"],
+                   "totalDist": distance, "avgSpeed": average, "maxSpeed": max(speeds),
+                   "minSpeed": min(speeds), "speedVar": sum((v - average) ** 2 for v in speeds) / len(speeds),
+                   "dirChanges": sum(abs(a - b) > math.pi / 4 for a, b in zip(directions, directions[1:])),
+                   "finalX": width}
+        text = json.dumps(summary, separators=(",", ":"))
+        timestamp, offset = str(int(time.time() * 1000)), f"{width:.2f}"
+        encrypted = "".join(chr(ord(char) ^ ord(secret[i % len(secret)])) for i, char in enumerate(text))
+        signature = 0x811c9dc5
+        for char in text + timestamp + offset + secret:
+            signature = ((signature ^ ord(char)) * 0x01000193) & 0xffffffff
+        return {"tn_r": offset, "track": base64.b64encode(encrypted.encode()).decode(),
+                "ts": timestamp, "sign": f"{signature:x}"}
         
 
     def login(self) -> bool:
@@ -136,10 +180,11 @@ class LaoWangSSign(BaseSign):
         }
         response = self.session.post(url, headers=headers, data=payload)
         if response.status_code == 200:
-            if any(text in response.text for text in ("签到成功", "已经签到", "今日已签到", "恭喜")):
-                self.pwl("签到成功或今日已签到")
+            confirmed = self.session.get(f"{self.base_url}/plugin.php?id=k_misign:sign")
+            if confirmed.status_code == 200 and Selector(response=confirmed).xpath('//span[contains(@class,"btnvisted")]'):
+                self.pwl("签到成功，已回读今日签到状态")
                 return True
-            self.pwl("签到响应未包含成功标志")
+            self.pwl("未确认今日签到状态")
             return False
         self.pwl(response.text)
         return False

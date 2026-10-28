@@ -16,7 +16,7 @@ class TitiSign(BaseSign):
         # 支持的方法
         self.is_sign = False
         self.exec_method = ["sign"]
-        self.sign_path = "/wp-json/b2/v1/userMission"
+        self.sign_path = "wp-json/b2/v1/userMission"
 
     def _login(self):
         """
@@ -59,8 +59,7 @@ class TitiSign(BaseSign):
             }
             self.session.headers.update(token_header)
             self.pwl(f"登录信息：用户名{name},当前积分：{score}")
-            self.get_mission()
-            return True
+            return self.get_info()
         self.pwl('登录失败' + response.text)
         return False
 
@@ -86,12 +85,16 @@ class TitiSign(BaseSign):
         response = self.session.post(url, headers=headers)
         if response.status_code == 200:
             response_info = json.loads(response.text)
-            finish = response_info.get("user_data").get("task_").get("finish")
-            if finish == 1:
-                self.is_sign = True
+            finish = response_info.get("user_data", {}).get("task_", {}).get("finish")
+            if finish not in (0, 1):
+                self.pwl("用户信息缺少有效的签到状态")
+                return False
+            self.is_sign = finish == 1
             self.pwl(f"签到状态:{self.is_sign}")
+            return True
         else:
-            self.pwl('获取用户信息失败' + response.text)
+            self.pwl(f"获取用户信息失败：HTTP {response.status_code}")
+            return False
 
     def get_mission(self):
         url = f"{self.base_url}/wp-json/b2/v1/getUserMission"

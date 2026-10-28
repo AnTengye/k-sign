@@ -4,9 +4,11 @@ cron: 0 16 8 * * *
 new Env('嘤嘤怪签到');
 """
 
+import base64
+import binascii
 import json
 import re
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 from base import BaseSign
 from gifcode import handle_yzm
@@ -20,7 +22,12 @@ class YYGSign(BaseSign):
         # 支持的方法
         self.exec_method = ["sign"]
     def login(self) -> bool:
-        self._get_with_anti_cc(self.base_url)
+        page = self._get_with_anti_cc(self.base_url)
+        final_url = urlparse(page.url)
+        if final_url.scheme == "https" and final_url.netloc != self.url_info.netloc:
+            self.base_url = f"https://{final_url.netloc}"
+            self.url_info = urlparse(self.base_url)
+            self.pwl(f"使用站点跳转后的地址：{self.base_url}")
         code = self.code()
         if code == "":
             self.pwl("验证码无法识别")
@@ -106,7 +113,12 @@ class YYGSign(BaseSign):
         img_str = img_data.get("img")
         if img_str and "," in img_str:
             _, content = img_str.split(",", 1)
-            result = handle_yzm(content, t=self.login_setting_code_type)
+            try:
+                image_bytes = base64.b64decode(content, validate=True)
+            except (ValueError, binascii.Error):
+                self.pwl("验证码图片不是有效的 Base64 数据")
+                return ""
+            result = handle_yzm(image_bytes, t="img")
             if self.check_code(result):
                 return result
             return self.code(retry-1)

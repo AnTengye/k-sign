@@ -4,13 +4,18 @@ cron: 0 0 8 * * *
 new Env('akile签到');
 """
 import json
+from urllib.parse import urlparse
 from curl_cffi import requests
 from base import BaseSign
 
 
 class AkileSign(BaseSign):
     def __init__(self):
-        super(AkileSign, self).__init__("https://api.akile.io", app_name="akile", app_key="AKILE")
+        super(AkileSign, self).__init__("https://api.akile.ai", app_name="akile", app_key="AKILE")
+        if self.url_info.hostname in {"akile.ai", "www.akile.ai", "akile.io", "api.akile.io"}:
+            self.base_url = "https://api.akile.ai"
+            self.url_info = urlparse(self.base_url)
+            self.pwl("使用 Akile API 地址：https://api.akile.ai")
         base_session = self.session
         self.session = requests.Session(impersonate="chrome101")
         self.session.headers.update(base_session.headers)
@@ -58,7 +63,7 @@ class AkileSign(BaseSign):
             response_info = json.loads(response.text)
             name = response_info.get("status_code")
             if name != 0:
-                self.pwl("登录失败，请检查返回值")
+                self.pwl(f"登录失败：{response_info.get('status_msg', '服务端未提供原因')}")
                 return False
             token = response_info.get("data").get("token")
             token_header = {
@@ -66,7 +71,7 @@ class AkileSign(BaseSign):
             }
             self.session.headers.update(token_header)
             return True
-        self.pwl('登录失败' + response.text)
+        self.pwl(f"登录失败：HTTP {response.status_code}")
         return False
 
     def sign(self) -> bool:

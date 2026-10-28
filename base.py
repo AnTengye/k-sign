@@ -12,8 +12,8 @@ from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
 from requests.packages.urllib3.util.ssl_ import create_urllib3_context
 from scrapy import Selector
+from lxml.etree import XMLSyntaxError
 
-from gifcode import handle_yzm
 from notify import send
 
 DEFAULT_TIMEOUT = 10  # seconds
@@ -244,6 +244,11 @@ class BaseSign:
 
     def sign(self) -> bool:
         qd_response = self.session.get(f"{self.base_url}/{self.index_path}")
+        if qd_response.status_code != 200:
+            retry_after = qd_response.headers.get("Retry-After")
+            suffix = f"，服务端要求 {retry_after} 秒后重试" if retry_after else ""
+            self.pwl(f"签到页面请求失败：HTTP {qd_response.status_code}{suffix}")
+            return False
         sign_selector = Selector(response=qd_response)
         sign_info = sign_selector.xpath(self.sign_text_xpath).extract_first()
         if sign_info:
@@ -272,10 +277,22 @@ class BaseSign:
         """
         response = self.session.get(
             f"{self.base_url}/{self.sign_path}" % form_hash)
-        result_selector = Selector(response=response)
+        if response.status_code != 200:
+            self.pwl(f"签到请求失败：HTTP {response.status_code}")
+            return False
+        try:
+            result_selector = Selector(text=response.text, type="xml")
+        except XMLSyntaxError:
+            self.pwl("签到响应不是有效的 XML，无法确认签到成功")
+            return False
+        if not result_selector.xpath("/root"):
+            self.pwl("签到响应不是预期的 XML，无法确认签到成功")
+            return False
         result = result_selector.xpath("/root/text()").extract_first()
-        self.pwl(f"签到异常信息：{result}")
         if result:
+            self.pwl(f"签到返回信息：{result}")
+            if any(message in result for message in ("签到成功", "已经签到", "今日已签到", "今天已经签到")):
+                return True
             return False
         else:
             return True
@@ -445,6 +462,8 @@ class BaseSign:
             return False
 
     def _code(self, sec_hash, update, times=3) -> str:
+        from gifcode import handle_yzm
+
         if times == 0:
             self.pwl("错误次数过多")
             return ""

@@ -26,9 +26,8 @@ class LJDSign(BaseSign):
     ]
 
     def __init__(self):
-        # 站点当前证书已过期，暂时只对该站点关闭校验，避免影响其他任务。
-        super(LJDSign, self).__init__("https://www.epl80.net", app_name="2048", app_key="LJD", proxy=False,
-                                      verify=False)
+        # 官方发布页：https://2046.info
+        super(LJDSign, self).__init__("https://6gmz.735-yj3bfjz.shop", app_name="2048", app_key="LJD", proxy=False)
         self.retry_times = 3
         self.login_type = "login_cookie" if os.getenv("SIGN_COOKIE_LJD") else "login"
         self.session.headers.update({"User-Agent": self.user_agent})
@@ -112,7 +111,10 @@ class LJDSign(BaseSign):
         return self.session.get(retry_url)
 
     def sign(self) -> bool:
-        self.session.get(f"{self.base_url}/hack.php?H_name=qiandao")
+        page = self.session.get(f"{self.base_url}/hack.php?H_name=qiandao")
+        if page.status_code != 200:
+            self.pwl(f"签到页面请求失败：HTTP {page.status_code}")
+            return False
         headers = {
             "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
             "accept-language": "zh-CN,zh;q=0.9",
@@ -142,12 +144,21 @@ class LJDSign(BaseSign):
         }
         sign_resp = self.session.post(f"{self.base_url}/hack.php?H_name=qiandao&", headers=headers, data=data)
         if sign_resp.status_code == 200:
+            if "必须绑定邮箱后才能签到" in sign_resp.text:
+                self.pwl("签到失败：站点要求先绑定邮箱")
+                return False
+            if any(message in sign_resp.text for message in ("请完成滑块验证", "验证码不正确", "验证码错误")):
+                self.pwl("签到失败：需要完成站点腾讯滑块验证，普通 OCR 无法提供 ticket/randstr")
+                return False
             resp_selector = Selector(response=sign_resp)
             success_result = resp_selector.re(r"签到成功|已经签到|今日已签到")
             if success_result is not None and len(success_result) > 0:
                 self.session.get(f"{self.base_url}/search.php")
                 self.pwl(success_result[0])
                 return True
+            self.pwl("签到响应未包含可确认的成功信息")
+        else:
+            self.pwl(f"签到请求失败：HTTP {sign_resp.status_code}")
         # //*[@id="scbar_form"]/input[2]/@value
         return False
 

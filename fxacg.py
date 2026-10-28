@@ -5,6 +5,7 @@ new Env('飞雪acg签到');
 """
 from base import BaseSign
 from urllib.parse import quote
+from requests.packages.urllib3.util.retry import Retry
 
 class FXAcgSign(BaseSign):
     def __init__(self):
@@ -12,6 +13,10 @@ class FXAcgSign(BaseSign):
                                         proxy=True)
 
         self.retry_times = 3
+        # The sign-in plugin currently sends HTTP 503 with Retry-After: 3600.
+        # Return the response to the caller without holding the task for an hour.
+        for adapter in self.session.adapters.values():
+            adapter.max_retries = Retry(total=0, raise_on_status=False)
         # 登录配置
         self.login_type = "login_code"
         self.login_setting_code_type = "img"

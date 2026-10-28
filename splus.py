@@ -130,7 +130,7 @@ class SouthPlusSign(BaseSign):
             'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36',
         }
         response = self.session.get(url, headers=headers, data=payload)
-        result = handle_yzm(response.content, t="img")
+        result = handle_yzm(response.content, t="img", digits=True)
         if result.encode().isdigit():
             if len(result) != 4:
                 return self.code(times - 1)
@@ -161,7 +161,12 @@ class SouthPlusSign(BaseSign):
         }
 
         response = self.session.get(url, headers=headers, data=payload)
-        verify_values = re.findall(r"[?&]verify=([\w-]+)", response.text)
+        if response.status_code != 200:
+            self.pwl(f"获取任务页面失败：HTTP {response.status_code}")
+            return False
+        verify_values = re.findall(r"var\s+verifyhash\s*=\s*['\"]([\w-]+)['\"]", response.text)
+        if not verify_values:
+            verify_values = re.findall(r"[?&]verify=([\w-]+)", response.text)
         if not verify_values:
             self.pwl("获取任务 verify 参数失败")
             return False

@@ -160,9 +160,9 @@ class DJGameSign(BaseSign):
 
     def sign(self) -> bool:
         sign_list = {
-            "6": "今日之星",
-            "5": "神之手",
             "1": "每日签到",
+            "5": "神之一手",
+            "6": "今日之星",
         }
         daily_result = False
         for k, v in sign_list.items():
@@ -187,18 +187,33 @@ class DJGameSign(BaseSign):
                 'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/103.0.0.0 Safari/537.36'
             }
             response = self.session.get(url, headers=headers, data=payload)
+            if "Database Error" in response.text or "notconnect" in response.text:
+                self.pwl("站点数据库错误，停止本次任务领奖")
+                return False
             selector = Selector(response=response)
-            result = selector.xpath('//*[@id="messagetext"]/p[1]/text()').extract_first()
-            self.pwl(f"{v} 结果：{result}")
+            result = "".join(selector.xpath('//*[@id="messagetext"]/p[1]//text()[not(ancestor::script)]').getall()).strip()
+            self.pwl(f"{v} 申请：{result or '已进入任务页面'}")
+            if response.status_code != 200:
+                continue
+            # Applying starts the task; the reward is only credited by do=draw.
+            reward = self.session.get(f"{self.base_url}/home.php?mod=task&do=draw&id={k}", headers=headers)
+            if "Database Error" in reward.text or "notconnect" in reward.text:
+                self.pwl("站点数据库错误，停止本次任务领奖")
+                return False
+            reward_selector = Selector(response=reward)
+            message = "".join(reward_selector.xpath('//*[@id="messagetext"]/p[1]//text()[not(ancestor::script)]').getall()).strip()
+            self.pwl(f"{v} 领奖：{message or '未返回完成信息'}")
             if k == "1":
-                daily_result = self._task_succeeded(result)
+                daily_result = reward.status_code == 200 and self._task_succeeded(message)
         return daily_result
 
     @staticmethod
     def _task_succeeded(message) -> bool:
         if not message:
             return False
-        return any(text in message for text in ("成功", "完成", "已经", "已申请", "已领取"))
+        if any(text in message for text in ("需要先", "未完成", "尚未", "失败", "失敗", "错误", "錯誤", "沒有", "没有")):
+            return False
+        return any(text in message for text in ("成功", "已完成", "已经完成", "已經完成", "已领取", "已領取", "已经领取", "已經領取"))
 
 
 if __name__ == "__main__":

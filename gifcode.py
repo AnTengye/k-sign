@@ -7,6 +7,15 @@ import time
 import json
 from PIL import Image
 from io import BytesIO
+from functools import lru_cache
+
+
+@lru_cache(maxsize=4)
+def _get_ocr(char, onnx, digits):
+    ocr = ddddocr.DdddOcr(show_ad=False, import_onnx_path=onnx, charsets_path=char)
+    if digits:
+        ocr.set_ranges("0123456789")
+    return ocr
 
 
 def recogition(yzm_data):
@@ -29,7 +38,7 @@ def recogition(yzm_data):
     return yzm_text
 
 
-def recogition2(yzm_data, char="", onnx="", debug=False):
+def recogition2(yzm_data, char="", onnx="", debug=False, digits=False):
     """
     验证码识别
     :param debug:
@@ -38,10 +47,21 @@ def recogition2(yzm_data, char="", onnx="", debug=False):
     :param yzm_data:
     :return:
     """
-    ocr = ddddocr.DdddOcr(show_ad=False, import_onnx_path=onnx,
-                          charsets_path=char)
     try:
-        res = ocr.classification(yzm_data)
+        ocr = _get_ocr(char, onnx, digits)
+        res = ocr.classification(yzm_data, probability=digits)
+        if isinstance(res, dict):
+            if "text" in res:
+                res = res["text"]
+            else:
+                chars = []
+                previous = None
+                for row in res["probability"]:
+                    current = res["charsets"][max(range(len(row)), key=row.__getitem__)]
+                    if current and current != previous:
+                        chars.append(current)
+                    previous = current
+                res = "".join(chars)
         if debug:
             base64_str = base64.b64encode(yzm_data)
             print(base64_str.decode("utf-8"))
@@ -84,7 +104,7 @@ def gif_to_png(length, image) -> (int, bytes):
     return max_frame, None
 
 
-def handle_yzm(img_data, char="", onnx="", t="gif", debug=False) -> str:
+def handle_yzm(img_data, char="", onnx="", t="gif", debug=False, digits=False) -> str:
     """
     处理验证码
     :return:
@@ -103,9 +123,9 @@ def handle_yzm(img_data, char="", onnx="", t="gif", debug=False) -> str:
             return ""
         _, png_info = gif_to_png(length, image)
         if png_info:
-            result = recogition2(png_info, char, onnx, debug)
+            result = recogition2(png_info, char, onnx, debug, digits)
     elif t == "img":
-        result = recogition2(img_data, char, onnx, debug)
+        result = recogition2(img_data, char, onnx, debug, digits)
     end = time.time()
     print(f"验证码结果：{result}-花费时间：{end - start}")
     return result

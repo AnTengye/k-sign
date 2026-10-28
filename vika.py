@@ -5,6 +5,7 @@ new Env('vika签到');
 """
 import datetime
 import json
+import uuid
 
 from base import BaseSign
 
@@ -12,6 +13,13 @@ from base import BaseSign
 class VikaSign(BaseSign):
     def __init__(self):
         super(VikaSign, self).__init__("https://www.vikacg.com", app_name="vika", app_key="VIKA", proxy=True)
+        # Public identifiers sent by the current official Moonlight web client.
+        self.session.headers.update({
+            "architecture": "AixPot",
+            "x-client-code": "C6746511-E471-44DA-A0CA-2C6D17DCE8EA",
+            "x-client-name": "VikACG Moonlight",
+            "x-device-code": uuid.uuid5(uuid.NAMESPACE_URL, f"{self.base_url}|{self.username}").hex,
+        })
         # 登录配置
         self.login_type = "login"
         # 支持的方法
@@ -47,7 +55,6 @@ class VikaSign(BaseSign):
             "account": self.username,
             "password": self.password
         })
-        # {'status': 'success', 'code': 200, 'statusCode': 200, 'statusMessage': '登录成功', 'message': '登录成功', 'data': {'token': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1aWQiOjMwMDI2MCwicm9sZSI6InVzZXIiLCJpYXQiOjE3NjE4MzM1MDMsImV4cCI6MTc5MzM5MTEwM30.HH495U1kodpzHtaQoUYfQfEKlvAE6haSQxfKA8HOekk'}}
         if response.status_code == 200:
             response_info = json.loads(response.text)
             resp_code = response_info.get("code")
@@ -59,8 +66,7 @@ class VikaSign(BaseSign):
                 "Authorization": "Bearer " + token
             }
             self.session.headers.update(token_header)
-            self.get_info()
-            return True
+            return self.get_info()
         self.pwl('登录失败' + response.text)
         return False
 
@@ -94,13 +100,17 @@ class VikaSign(BaseSign):
                 return False
             basic = response_info.get("data").get("basic")
             credit = response_info.get("data").get("credit")
+            if not isinstance(basic, dict) or not isinstance(credit, dict) or "sign_time" not in credit:
+                self.pwl("用户信息缺少有效的签到状态")
+                return False
             self.pwl(f"用户信息：{basic.get('name')},积分：{credit.get('count')}")
             # 2. 检查 sign_time 是否有效 (不为 0 且不为 None)
             sign_time = credit.get("sign_time")  # 先获取值
-            if sign_time and int(sign_time) != 0:
+            self.is_sign = False
+            if sign_time:
                 try:
                     timestamp_int = int(sign_time)
-                    timestamp_sec = timestamp_int / 1000.0  # 除以 1000
+                    timestamp_sec = timestamp_int / 1000.0 if timestamp_int > 100000000000 else timestamp_int
                     timestamp_date = datetime.datetime.fromtimestamp(timestamp_sec).date()
                     today_date = datetime.date.today()
                     self.pwl(f"签到时间戳: {timestamp_date}, 今天时间戳: {today_date}")
@@ -109,12 +119,14 @@ class VikaSign(BaseSign):
                 except (ValueError, OSError) as e:
                     # 如果时间戳格式还是有问题，捕获异常并打印
                     self.pwl(f"处理签到时间戳出错: {e}, 原始值: {sign_time}")
-                    self.is_sign = False  # 出错也算未签到
+                    return False
 
             # 6. 无论如何都会打印最终的正确状态
             self.pwl(f"签到状态:{self.is_sign}")
+            return True
         else:
             self.pwl('获取用户信息失败' + response.text)
+            return False
 
     def sign(self) -> bool:
         if self.is_sign:
