@@ -30,7 +30,7 @@ python3 -m unittest discover -v
 ## 百度网盘任务中心签到
 
 `dupan.py` 已切换为 App「成长值任务 / 去签到」对应的 `/coins/taskcenter/signin`。
-只执行签到，旧会员签到、每日答题和领奖已移出该入口。
+只执行签到。每日答题、任务上报和答题领奖已停用，人工 `--claim-probe` 入口已撤下；无需额外添加参数。
 
 当前使用 2026-09-08 成功验证的 S1 集合：完整 Cookie、8 个已验证静态客户端字段和
 User-Agent，以及本地新生成的 `rand/time`。支持导入私有登录资料，或使用

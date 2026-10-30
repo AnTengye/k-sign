@@ -6,8 +6,7 @@ new Env('百度网盘任务中心签到');
 SIGN_AUTH_DUPAN: 私有登录资料 JSON（兼容 one-tap-capture 格式）。
 或 SIGN_COOKIE_DUPAN + SIGN_CLIENT_DUPAN（静态字段 JSON）+ SIGN_USER_AGENT_DUPAN。
 SIGN_STATE_DIR_DUPAN: 持久目录，青龙默认 /ql/data/dupan，本地默认 data/dupan。
-先执行任务中心签到，再完成每日答题、任务上报与纯脚本领奖。
---claim-probe 保留为人工单独核验入口；与每日流程共用当天一次提交防重。
+命令行入口只执行任务中心签到；每日答题、任务上报和领奖已停用。
 """
 import argparse
 from contextlib import contextmanager
@@ -357,7 +356,9 @@ class DuPanSign(BaseSign):
         self.ledger_path = self.directory / ("attempt-" + account + ".json")
         self.ledger = read_json(self.ledger_path) if self.ledger_path.exists() else {}
         self.question_ledger_path = self.directory / ("question-" + account + ".json")
-        self.question_ledger = read_json(self.question_ledger_path) if self.question_ledger_path.exists() else {}
+        self.question_ledger = (read_json(self.question_ledger_path)
+                                if (self.include_answer or self.claim_probe) and self.question_ledger_path.exists()
+                                else {})
         return True
 
     def _home(self):
@@ -759,17 +760,16 @@ class DuPanSign(BaseSign):
             self.locked = False
         if self.claim_probe:
             return content + f"一次性答题领奖实验：{getattr(self, 'answer_success', None)}\n" + self.log()
-        return content + f"任务中心签到结果：{getattr(self, 'sign_success', False)}；答题任务完成：{getattr(self, 'answer_success', None)}\n" + self.log()
+        return content + f"任务中心签到结果：{getattr(self, 'sign_success', False)}\n" + self.log()
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="百度网盘任务中心纯脚本签到及每日答题")
+    parser = argparse.ArgumentParser(description="百度网盘任务中心签到（仅签到）")
     modes = parser.add_mutually_exclusive_group()
-    modes.add_argument("--status", action="store_true", help="只读签到与答题状态，禁止提交，不发送通知")
+    modes.add_argument("--status", action="store_true", help="只读签到状态，禁止提交，不发送通知")
     modes.add_argument("--import-auth", type=Path, help="离线导入已有登录资料，不请求网络，不覆盖已有文件")
-    modes.add_argument("--claim-probe", action="store_true", help="一次性无 App 领奖实验；不属于每日定时任务")
     parser.add_argument("--no-notify", action="store_true", help="只在控制台输出，不发送通知")
-    parser.add_argument("--sign-only", action="store_true", help="仅运行已验证的签到，不执行每日答题")
+    parser.add_argument("--sign-only", action="store_true", help="兼容旧命令；当前始终只执行签到")
     args = parser.parse_args(argv)
     os.umask(0o077)
     try:
@@ -777,9 +777,8 @@ def main(argv=None):
             destination = import_profile(args.import_auth, state_directory())
             print(f"登录资料已保存（0600）：{destination}")
             return 0
-        sign = DuPanSign(read_only=args.status, include_answer=not args.sign_only,
-                         claim_probe=args.claim_probe)
-        if args.status or args.no_notify or args.claim_probe:
+        sign = DuPanSign(read_only=args.status)
+        if args.status or args.no_notify:
             sign._exec("")
         else:
             sign.run()
