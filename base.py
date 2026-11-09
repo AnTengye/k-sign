@@ -1,9 +1,13 @@
+import datetime
+import fcntl
+import json
 import os
 import random
 import secrets
 import ssl
 import string
 import traceback
+from pathlib import Path
 from urllib.parse import urlparse, ParseResult, quote
 
 import requests
@@ -17,6 +21,46 @@ from lxml.etree import XMLSyntaxError
 from notify import send
 
 DEFAULT_TIMEOUT = 10  # seconds
+
+
+def summary_directory() -> Path:
+    default = (
+        Path("/ql/data/ksign_summary")
+        if Path("/ql/data").is_dir()
+        else Path(__file__).resolve().parent / "data/ksign_summary"
+    )
+    return Path(os.getenv("SIGN_SUMMARY_DIR") or default).expanduser().resolve()
+
+
+def record_daily_result(app_name: str, success: bool, today: str = None) -> Path:
+    summary_dir = summary_directory()
+    summary_dir.mkdir(parents=True, exist_ok=True)
+    today = today or datetime.date.today().isoformat()
+    ledger_path = summary_dir / f"{today}.json"
+    lock_path = summary_dir / ".lock"
+
+    with open(lock_path, "w", encoding="utf-8") as lock_file:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        try:
+            data = {}
+            if ledger_path.exists():
+                try:
+                    loaded = json.loads(ledger_path.read_text(encoding="utf-8"))
+                    if isinstance(loaded, dict):
+                        data = loaded
+                except Exception:
+                    data = {}
+            data[app_name] = {
+                "success": bool(success),
+                "updated_at": datetime.datetime.now().isoformat(timespec="seconds"),
+            }
+            ledger_path.write_text(
+                json.dumps(data, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        finally:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+    return ledger_path
 
 
 class SignExecutionError(RuntimeError):
@@ -638,7 +682,12 @@ class BaseSign:
 
     def run(self):
         content = self._exec("")
-        send(title=self.app_name, content=content)
+        try:
+            record_daily_result(self.app_name, self.last_run_success)
+        except Exception as e:
+            print(f"记录每日汇总结果失败: {e}")
+        if os.getenv("SIGN_NOTIFY_EACH", "").strip().lower() in {"1", "true", "yes", "on"}:
+            send(title=self.app_name, content=content)
         if not self.last_run_success:
             raise SignExecutionError(f"{self.app_name} 执行失败")
         return True

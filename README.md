@@ -18,14 +18,41 @@ QL_BIND_ADDRESS=127.0.0.1 docker compose up -d
 ## 拉取签到脚本
 
 ```bash
-ql repo "https://github.com/AnTengye/k-sign.git" "" "onnx|json|base|notify|gifcode|tools|expired|slidecode|test" "onnx|json|base.py|notify.py|gifcode.py|tools.py|slidecode.py" "" "py|onnx|json" ""
+ql repo "https://github.com/AnTengye/k-sign.git" "" "onnx|json|base|notify|gifcode|tools|expired|slidecode|test|dupan_signing" "onnx|json|base.py|notify.py|gifcode.py|tools.py|slidecode.py|dupan_signing.py" "" "py|onnx|json" ""
 ```
+
+## 每日签到汇总通知
+
+各个签到任务执行完毕后默认不再单独推送通知，而是将当日执行结果写入 `/ql/data/ksign_summary/YYYY-MM-DD.json`（本地回退 `data/ksign_summary/`），由 `daily_summary.py`（默认每天 `20:30`）统一汇总推送一条通知：
+
+```text
+【今日成功X条，失败X条，失败任务：xx、xx】
+```
+
+如需恢复每个任务单独推送通知，可在青龙环境变量中设置 `SIGN_NOTIFY_EACH=1`。
 
 ## 本地测试
 
 ```bash
 python3 -m unittest discover -v
 ```
+
+## New API 站点签到
+
+`newapi.py` 支持多个站点，可在青龙环境变量中为每个站点使用相同后缀配置。
+例如南梁 API（`api.llm.pm`）使用个人访问令牌签到：
+
+```text
+SIGN_URL_NEWAPI_LLMPM=https://api.llm.pm
+SIGN_TOKENS_NEWAPI_LLMPM=5073|<个人访问令牌>
+```
+
+账号 ID 使用 `/api/user/self` 返回的 `id`。令牌配置每行一个 `user_id|token`，
+无需同时设置该站点的 `SIGN_UP_NEWAPI_LLMPM`；其他站点仍可使用原有的账号密码配置。
+只在青龙环境变量中保存真实令牌，不要写入仓库。
+
+已有的 `newapi.py` 定时任务会自动发现这些站点，无需为每个站点新建任务。
+脚本先读取今日签到状态，已签到时直接跳过。
 
 ## 百度网盘任务中心签到
 
