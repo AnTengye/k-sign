@@ -194,13 +194,50 @@ class LJDSign(BaseSign):
                 and isinstance(result.get("randstr"), str) and bool(result["randstr"])
                 and not result["ticket"].startswith(("trerror_", "terror_")))
 
+    _TENCENT_CAPTCHA_READY_JS = """(oldBg) => {
+        const bg = document.querySelector('#slideBg');
+        if (!bg) return false;
+        const bgStyle = getComputedStyle(bg);
+        const bgImg = bgStyle.backgroundImage;
+        if (!bgImg || bgImg === 'none' || !bgImg.includes('url(')) return false;
+        if (oldBg && bgImg === oldBg) return false;
+        if (parseFloat(bgStyle.width) <= 0) return false;
+        const items = [...document.querySelectorAll('.tc-fg-item')];
+        return items.some(e => {
+            const s = getComputedStyle(e);
+            const w = parseFloat(s.width);
+            const h = parseFloat(s.height);
+            const img = s.backgroundImage;
+            return img && img !== 'none' && img.includes('url(') && w > 0 && h > 0 && Math.abs(w - h) < 1;
+        });
+    }"""
+
+    @staticmethod
+    def _extract_tencent_piece(meta):
+        items = meta.get("items", []) if isinstance(meta, dict) else []
+        piece = next(
+            (item for item in items
+             if isinstance(item, dict)
+             and item.get("image") not in (None, "none", "")
+             and item.get("w", 0) > 0
+             and item.get("h", 0) > 0
+             and abs(item.get("w", 0) - item.get("h", 0)) < 1),
+            None,
+        )
+        if piece is None:
+            raise ValueError("未找到有效的滑块拼图块元素")
+        return piece
+
+    @classmethod
+    def _wait_tencent_captcha_ready(cls, frame, old_background=None, timeout=15000):
+        frame.wait_for_function(cls._TENCENT_CAPTCHA_READY_JS, arg=old_background, timeout=timeout)
+
     @staticmethod
     def _tencent_slider_distance(meta, background_bytes, sprite_bytes):
         import ddddocr
         from PIL import Image
 
-        piece_meta = next(item for item in meta["items"]
-                          if item["image"] != "none" and abs(item["w"] - item["h"]) < 1)
+        piece_meta = LJDSign._extract_tencent_piece(meta)
         sprite = Image.open(io.BytesIO(sprite_bytes))
         background = Image.open(io.BytesIO(background_bytes))
         sprite_scale = float(piece_meta["size"].split()[0].removesuffix("px")) / sprite.width
@@ -281,6 +318,7 @@ class LJDSign(BaseSign):
                         page.locator("#tcaptcha_iframe_dy").wait_for(state="visible")
                         frame = page.locator("#tcaptcha_iframe_dy").element_handle().content_frame()
                         frame.locator(".tc-slider-normal").wait_for(state="visible")
+                        self._wait_tencent_captcha_ready(frame)
                         meta = frame.evaluate("""() => {
                             const read = e => { const s=getComputedStyle(e); return {image:s.backgroundImage,
                                 size:s.backgroundSize,pos:s.backgroundPosition,w:parseFloat(s.width),
@@ -288,7 +326,7 @@ class LJDSign(BaseSign):
                             return {bg:read(document.querySelector('#slideBg')),
                                 items:[...document.querySelectorAll('.tc-fg-item')].map(read)};
                         }""")
-                        piece = next(item for item in meta["items"] if item["image"] != "none" and abs(item["w"] - item["h"]) < 1)
+                        piece = self._extract_tencent_piece(meta)
 
                         def image_bytes(css):
                             url = css[4:-1].strip('\"\'')
@@ -317,7 +355,7 @@ class LJDSign(BaseSign):
                             if str(code) == "50" and attempt == 0:
                                 old_background = frame.locator("#slideBg").evaluate("e => getComputedStyle(e).backgroundImage")
                                 frame.locator("#reload").click()
-                                frame.wait_for_function("old => getComputedStyle(document.querySelector('#slideBg')).backgroundImage !== old", arg=old_background)
+                                self._wait_tencent_captcha_ready(frame, old_background=old_background)
                                 continue
                             return None
                         result = page.evaluate("window.__signCaptchaResult")
