@@ -18,7 +18,7 @@ QL_BIND_ADDRESS=127.0.0.1 docker compose up -d
 ## 拉取签到脚本
 
 ```bash
-ql repo "https://github.com/AnTengye/k-sign.git" "" "onnx|json|base|notify|gifcode|tools|expired|slidecode|test|dupan_signing" "onnx|json|base.py|notify.py|gifcode.py|tools.py|slidecode.py|dupan_signing.py" "" "py|onnx|json" ""
+ql repo "https://github.com/AnTengye/k-sign.git" "" "onnx|json|base|notify|gifcode|tools|expired|slidecode|test|dupan_signing|examples" "onnx|json|base.py|notify.py|gifcode.py|tools.py|slidecode.py|dupan_signing.py" "" "py|onnx|json" ""
 ```
 
 ## 每日签到汇总通知
@@ -36,6 +36,21 @@ ql repo "https://github.com/AnTengye/k-sign.git" "" "onnx|json|base|notify|gifco
 ```bash
 python3 -m unittest discover -v
 ```
+
+## 独立登录示例
+
+`examples/` 仅存放手动运行的示例，不注册青龙定时任务，拉库命令将其排除。
+欧洲GO登录示例 `examples/eurgo.py` 继承 `BaseSign`，处理登录表单和图片验证码，
+回读订单页确认登录态后输出 Cookie。默认执行只显示用法，不发起登录请求。
+
+需要使用时，在仓库根目录手动运行：
+
+```bash
+export SIGN_UP_EURGO='用户名|密码'
+python3 -m examples.eurgo --run
+```
+
+账号密码通过环境变量提供，Cookie 仅输出到终端，不加入通知内容。
 
 ## New API 站点签到
 
