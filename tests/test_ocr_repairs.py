@@ -292,6 +292,103 @@ class RuntimeRepairTests(unittest.TestCase):
             server.server_close()
             worker.join()
 
+    def test_feixue_signs_from_homepage_and_confirms_via_readback_despite_error_redirect(self):
+        import fxacg
+
+        def make_resp(body, status_code=200, url="https://feixueacg.org/", headers=None):
+            resp = self._response(body, url=url)
+            resp.status_code = status_code
+            if headers:
+                resp.headers.update(headers)
+            return resp
+
+        with patch.dict(os.environ, {"SIGN_UP_FXACG": "fixture|fixture", "SIGN_PROXY_FXACG": "false"}, clear=True):
+            signer = fxacg.FXAcgSign()
+        signer.pwl = Mock()
+        signer.session = Mock()
+
+        home_html = '<form id="scbar_form"><input name="a" value="1"><input name="formhash" value="83eef258"></form>'
+        check_yes = '$(\'dcsignin_tips\').style.backgroundImage="url(source/plugin/dc_signin/images/signin_yes.png)";'
+        check_empty = ""
+        modal_yes = '<?xml version="1.0" encoding="utf-8"?><root><![CDATA[<div class="alert_error">您今日已经签过到~~</div>]]></root>'
+        modal_unsigned = '<?xml version="1.0" encoding="utf-8"?><root><![CDATA[<form><input type="hidden" name="formhash" value="83eef258"></form>]]></root>'
+
+        # 场景 A1：check 接口返回 signin_yes.png，跳过 POST
+        signer.session.get.side_effect = [make_resp(home_html), make_resp(check_yes)]
+        self.assertTrue(signer.sign())
+        signer.session.post.assert_not_called()
+
+        # 场景 A2：check 接口未命中但弹窗返回“您今日已经签过到~~”，跳过 POST
+        signer.session.get.side_effect = [make_resp(home_html), make_resp(check_empty), make_resp(modal_yes)]
+        self.assertTrue(signer.sign())
+        signer.session.post.assert_not_called()
+
+        # 场景 B1：正常提交 POST 并通过首页动态状态回读确认，且全程不访问 dc_signin-dc_signin.html
+        signer.session.get.side_effect = [
+            make_resp(home_html),
+            make_resp(check_empty),
+            make_resp(modal_unsigned),
+            make_resp(home_html),
+            make_resp(check_yes),
+        ]
+        signer.session.post.return_value = make_resp(
+            "<?xml version=\"1.0\" encoding=\"utf-8\"?><root><![CDATA[<script>succeedhandle_signin('dc_signin-dc_signin.html', '恭喜您，签到成功！', {});</script>]]></root>"
+        )
+        self.assertTrue(signer.sign())
+        post_call = signer.session.post.call_args
+        self.assertEqual("https://feixueacg.org/plugin.php?id=dc_signin:sign&inajax=1", post_call.args[0])
+        self.assertIs(False, post_call.kwargs["allow_redirects"])
+        self.assertEqual("https://feixueacg.org/", post_call.kwargs["headers"]["Referer"])
+        self.assertEqual(
+            {
+                "formhash": "83eef258",
+                "signsubmit": "yes",
+                "handlekey": "signin",
+                "emotid": "8",
+                "referer": "https://feixueacg.org/",
+                "content": "每天萌萌哒~~",
+            },
+            post_call.kwargs["data"],
+        )
+        requested_urls = [c.args[0] for c in signer.session.get.call_args_list] + [post_call.args[0]]
+        self.assertTrue(all("dc_signin-dc_signin.html" not in u for u in requested_urls))
+
+        # 场景 B2：POST 返回 302 指向错误页或 503，但回读确认为已签到 -> 成功
+        for post_resp in (
+            make_resp("", status_code=302, headers={"Location": "https://feixueacg.org/dc_signin-dc_signin.html"}),
+            make_resp("<html>System Error</html>", status_code=503),
+        ):
+            signer.session.get.reset_mock()
+            signer.session.post.reset_mock()
+            signer.session.get.side_effect = [
+                make_resp(home_html),
+                make_resp(check_empty),
+                make_resp(modal_unsigned),
+                make_resp(home_html),
+                make_resp(check_empty),
+                make_resp(modal_yes),
+            ]
+            signer.session.post.return_value = post_resp
+            self.assertTrue(signer.sign())
+
+        # 场景 B3：POST 返回 503 或 errorhandle_signin 且回读仍为未签到 -> 失败
+        for post_resp in (
+            make_resp("<html>System Error</html>", status_code=503),
+            make_resp("<root><![CDATA[<script>errorhandle_signin('参数错误', {});</script>]]></root>"),
+        ):
+            signer.session.get.reset_mock()
+            signer.session.post.reset_mock()
+            signer.session.get.side_effect = [
+                make_resp(home_html),
+                make_resp(check_empty),
+                make_resp(modal_unsigned),
+                make_resp(home_html),
+                make_resp(check_empty),
+                make_resp(modal_unsigned),
+            ]
+            signer.session.post.return_value = post_resp
+            self.assertFalse(signer.sign())
+
     def test_yyg_uses_redirected_origin_for_login_and_decodes_image(self):
         import yyg
 
